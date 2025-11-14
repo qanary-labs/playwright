@@ -1204,6 +1204,12 @@ scheme.PageSelectorAtPointParams = tObject({
 scheme.PageSelectorAtPointResult = tObject({
   selector: tString,
 });
+scheme.PageGenerateSelectorsParams = tObject({
+  selector: tString,
+});
+scheme.PageGenerateSelectorsResult = tObject({
+  selectors: tArray(tString),
+});
 scheme.PageAddInitScriptParams = tObject({
   source: tString,
 });
