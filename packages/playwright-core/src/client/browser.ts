@@ -85,6 +85,7 @@ export class Browser extends ChannelOwner<channels.BrowserChannel> implements ap
     if (options.logger)
       context._logger = options.logger;
     await context._initializeHarFromOptions(options.recordHar);
+    await context._initializeSelectorRecorder(options.recordSelectors);
     await this._instrumentation.runAfterCreateBrowserContext(context);
     return context;
   }
