@@ -50,6 +50,7 @@ export const Events = {
     Page: 'page',
     PageClose: 'pageclose',
     PageLoad: 'pageload',
+    RecorderAction: 'recorderaction',
     // Can't use just 'error' due to node.js special treatment of error events.
     // @see https://nodejs.org/api/events.html#events_error_events
     WebError: 'weberror',
@@ -70,6 +71,7 @@ export const Events = {
     Crash: 'crash',
     Console: 'console',
     Dialog: 'dialog',
+    RecorderAction: 'recorderaction',
     Download: 'download',
     FileChooser: 'filechooser',
     DOMContentLoaded: 'domcontentloaded',

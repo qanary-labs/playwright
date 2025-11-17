@@ -67,6 +67,7 @@ export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'vie
   extraHTTPHeaders?: Headers;
   logger?: Logger;
   storageState?: string | SetStorageState;
+  recordSelectors?: boolean;
   har?: {
     path: string;
     fallback?: 'abort'|'continue';
