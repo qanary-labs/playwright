@@ -436,6 +436,7 @@ class RecordActionTool implements RecorderTool {
         selectors: this._hoveredModel!.selectors,
         signals: [],
         text: target.value,
+        sensitive: false,
       });
       return;
     }
@@ -455,6 +456,7 @@ class RecordActionTool implements RecorderTool {
         selectors: this._activeModel!.selectors,
         signals: [],
         text: target.isContentEditable ? target.innerText : (target as HTMLInputElement).value,
+        sensitive: (target as HTMLInputElement).type.toLowerCase() === 'password',
       });
     }
 
@@ -864,6 +866,7 @@ class JsonRecordActionTool implements RecorderTool {
         ariaSnapshot,
         signals: [],
         text: element.value,
+        sensitive: false,
       });
       return;
     }
@@ -882,6 +885,7 @@ class JsonRecordActionTool implements RecorderTool {
         ariaSnapshot,
         signals: [],
         text: element.isContentEditable ? element.innerText : (element as HTMLInputElement).value,
+        sensitive: (element as HTMLInputElement).type.toLowerCase() === 'password',
       });
       return;
     }
