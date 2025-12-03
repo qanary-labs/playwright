@@ -1056,6 +1056,7 @@ scheme.BrowserContextEnableRecorderParams = tObject({
   language: tOptional(tString),
   mode: tOptional(tEnum(['inspecting', 'recording'])),
   recorderMode: tOptional(tEnum(['default', 'api'])),
+  collectSelectors: tOptional(tBoolean),
   pauseOnNextStatement: tOptional(tBoolean),
   testIdAttributeName: tOptional(tString),
   launchOptions: tOptional(tAny),
@@ -1193,13 +1194,6 @@ scheme.PageWorkerEvent = tObject({
 scheme.PageGetSelectedTextParams = tOptional(tObject({}));
 scheme.PageGetSelectedTextResult = tObject({
   text: tString,
-});
-scheme.PageSelectorAtPointParams = tObject({
-  x: tFloat,
-  y: tFloat,
-});
-scheme.PageSelectorAtPointResult = tObject({
-  selector: tString,
 });
 scheme.PageAddInitScriptParams = tObject({
   source: tString,

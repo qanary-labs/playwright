@@ -867,12 +867,6 @@ export class Page extends SdkObject {
       text: await this.mainFrame().getSelectedText(),
     };
   }
-
-  async selectorAtPoint(x: number, y: number): Promise<{selector: string }> {
-    return {
-      selector: `(${x}, ${y})`,
-    };
-  }
 }
 
 export class Worker extends SdkObject {

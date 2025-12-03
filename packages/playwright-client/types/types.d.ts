@@ -1172,6 +1172,14 @@ export interface Page {
   on(event: 'popup', listener: (page: Page) => any): this;
 
   /**
+   * Same as
+   * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction),
+   * but emitted only for actions originating from this page. Requires
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors).
+   */
+  on(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
    * Emitted when a page issues a request. The [request] object is read-only. In order to intercept and mutate requests,
    * see [page.route(url, handler[, options])](https://playwright.dev/docs/api/class-page#page-route) or
    * [browserContext.route(url, handler[, options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
@@ -1284,6 +1292,11 @@ export interface Page {
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
   once(event: 'popup', listener: (page: Page) => any): this;
+
+  /**
+   * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
+   */
+  once(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
@@ -1474,6 +1487,14 @@ export interface Page {
   addListener(event: 'popup', listener: (page: Page) => any): this;
 
   /**
+   * Same as
+   * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction),
+   * but emitted only for actions originating from this page. Requires
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors).
+   */
+  addListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
    * Emitted when a page issues a request. The [request] object is read-only. In order to intercept and mutate requests,
    * see [page.route(url, handler[, options])](https://playwright.dev/docs/api/class-page#page-route) or
    * [browserContext.route(url, handler[, options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-route).
@@ -1590,6 +1611,11 @@ export interface Page {
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
+  removeListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
   removeListener(event: 'request', listener: (request: Request) => any): this;
 
   /**
@@ -1681,6 +1707,11 @@ export interface Page {
    * Removes an event listener added by `on` or `addListener`.
    */
   off(event: 'popup', listener: (page: Page) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
+  off(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
@@ -1869,6 +1900,14 @@ export interface Page {
    *
    */
   prependListener(event: 'popup', listener: (page: Page) => any): this;
+
+  /**
+   * Same as
+   * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction),
+   * but emitted only for actions originating from this page. Requires
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors).
+   */
+  prependListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Emitted when a page issues a request. The [request] object is read-only. In order to intercept and mutate requests,
@@ -4215,22 +4254,6 @@ export interface Page {
   }): Promise<Array<string>>;
 
   /**
-   * - from Qanary fork
-   *
-   * Retrieve selector corresponding to the coordinates.
-   *
-   * **Usage**
-   *
-   * ```js
-   * await page.selectorAtPoint(0, 0);
-   * ```
-   *
-   * @param x
-   * @param y
-   */
-  selectorAtPoint(x: number, y: number): Promise<string>;
-
-  /**
    * **NOTE** Use locator-based
    * [locator.setChecked(checked[, options])](https://playwright.dev/docs/api/class-locator#locator-set-checked)
    * instead. Read more about [locators](https://playwright.dev/docs/locators).
@@ -4915,6 +4938,14 @@ export interface Page {
    *
    */
   waitForEvent(event: 'popup', optionsOrPredicate?: { predicate?: (page: Page) => boolean | Promise<boolean>, timeout?: number } | ((page: Page) => boolean | Promise<boolean>)): Promise<Page>;
+
+  /**
+   * Same as
+   * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction),
+   * but emitted only for actions originating from this page. Requires
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors).
+   */
+  waitForEvent(event: 'recorderaction', optionsOrPredicate?: { predicate?: (recorderActionPayload: RecorderActionPayload) => boolean | Promise<boolean>, timeout?: number } | ((recorderActionPayload: RecorderActionPayload) => boolean | Promise<boolean>)): Promise<RecorderActionPayload>;
 
   /**
    * Emitted when a page issues a request. The [request] object is read-only. In order to intercept and mutate requests,
@@ -8328,6 +8359,28 @@ export interface BrowserContext {
   on(event: 'page', listener: (page: Page) => any): this;
 
   /**
+   * Emitted when
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors) is
+   * enabled. Playwright records user interactions in programmatic mode and emits this event for every action that
+   * targets an element. Subscribe to
+   * [page.on('recorderaction')](https://playwright.dev/docs/api/class-page#page-event-recorderaction) if you need to
+   * attribute actions to individual pages.
+   *
+   * ```js
+   * const context = await browser.newContext({ recordSelectors: true });
+   * context.on('recorderaction', action => {
+   *   console.log(action.action);
+   *   console.log(action.selector);
+   *   console.log(action.selectors);
+   *   console.log(action.role, action.text);
+   *   console.log(action.value);
+   * });
+   * ```
+   *
+   */
+  on(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
    * Emitted when a request is issued from any pages created through this context. The [request] object is read-only. To
    * only listen for requests from a particular page, use
    * [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request).
@@ -8403,6 +8456,11 @@ export interface BrowserContext {
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
    */
   once(event: 'page', listener: (page: Page) => any): this;
+
+  /**
+   * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
+   */
+  once(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Adds an event listener that will be automatically removed after it is triggered once. See `addListener` for more information about this event.
@@ -8520,6 +8578,28 @@ export interface BrowserContext {
   addListener(event: 'page', listener: (page: Page) => any): this;
 
   /**
+   * Emitted when
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors) is
+   * enabled. Playwright records user interactions in programmatic mode and emits this event for every action that
+   * targets an element. Subscribe to
+   * [page.on('recorderaction')](https://playwright.dev/docs/api/class-page#page-event-recorderaction) if you need to
+   * attribute actions to individual pages.
+   *
+   * ```js
+   * const context = await browser.newContext({ recordSelectors: true });
+   * context.on('recorderaction', action => {
+   *   console.log(action.action);
+   *   console.log(action.selector);
+   *   console.log(action.selectors);
+   *   console.log(action.role, action.text);
+   *   console.log(action.value);
+   * });
+   * ```
+   *
+   */
+  addListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
    * Emitted when a request is issued from any pages created through this context. The [request] object is read-only. To
    * only listen for requests from a particular page, use
    * [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request).
@@ -8599,6 +8679,11 @@ export interface BrowserContext {
   /**
    * Removes an event listener added by `on` or `addListener`.
    */
+  removeListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
   removeListener(event: 'request', listener: (request: Request) => any): this;
 
   /**
@@ -8650,6 +8735,11 @@ export interface BrowserContext {
    * Removes an event listener added by `on` or `addListener`.
    */
   off(event: 'page', listener: (page: Page) => any): this;
+
+  /**
+   * Removes an event listener added by `on` or `addListener`.
+   */
+  off(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Removes an event listener added by `on` or `addListener`.
@@ -8765,6 +8855,28 @@ export interface BrowserContext {
    *
    */
   prependListener(event: 'page', listener: (page: Page) => any): this;
+
+  /**
+   * Emitted when
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors) is
+   * enabled. Playwright records user interactions in programmatic mode and emits this event for every action that
+   * targets an element. Subscribe to
+   * [page.on('recorderaction')](https://playwright.dev/docs/api/class-page#page-event-recorderaction) if you need to
+   * attribute actions to individual pages.
+   *
+   * ```js
+   * const context = await browser.newContext({ recordSelectors: true });
+   * context.on('recorderaction', action => {
+   *   console.log(action.action);
+   *   console.log(action.selector);
+   *   console.log(action.selectors);
+   *   console.log(action.role, action.text);
+   *   console.log(action.value);
+   * });
+   * ```
+   *
+   */
+  prependListener(event: 'recorderaction', listener: (recorderActionPayload: RecorderActionPayload) => any): this;
 
   /**
    * Emitted when a request is issued from any pages created through this context. The [request] object is read-only. To
@@ -9485,6 +9597,28 @@ export interface BrowserContext {
   waitForEvent(event: 'page', optionsOrPredicate?: { predicate?: (page: Page) => boolean | Promise<boolean>, timeout?: number } | ((page: Page) => boolean | Promise<boolean>)): Promise<Page>;
 
   /**
+   * Emitted when
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors) is
+   * enabled. Playwright records user interactions in programmatic mode and emits this event for every action that
+   * targets an element. Subscribe to
+   * [page.on('recorderaction')](https://playwright.dev/docs/api/class-page#page-event-recorderaction) if you need to
+   * attribute actions to individual pages.
+   *
+   * ```js
+   * const context = await browser.newContext({ recordSelectors: true });
+   * context.on('recorderaction', action => {
+   *   console.log(action.action);
+   *   console.log(action.selector);
+   *   console.log(action.selectors);
+   *   console.log(action.role, action.text);
+   *   console.log(action.value);
+   * });
+   * ```
+   *
+   */
+  waitForEvent(event: 'recorderaction', optionsOrPredicate?: { predicate?: (recorderActionPayload: RecorderActionPayload) => boolean | Promise<boolean>, timeout?: number } | ((recorderActionPayload: RecorderActionPayload) => boolean | Promise<boolean>)): Promise<RecorderActionPayload>;
+
+  /**
    * Emitted when a request is issued from any pages created through this context. The [request] object is read-only. To
    * only listen for requests from a particular page, use
    * [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request).
@@ -10013,6 +10147,13 @@ export interface Browser {
        */
       urlFilter?: string|RegExp;
     };
+
+    /**
+     * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
+     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
+     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     */
+    recordSelectors?: boolean;
 
     /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
@@ -15266,6 +15407,13 @@ export interface BrowserType<Unused = {}> {
     };
 
     /**
+     * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
+     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
+     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     */
+    recordSelectors?: boolean;
+
+    /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
      * Make sure to await
      * [browserContext.close([options])](https://playwright.dev/docs/api/class-browsercontext#browser-context-close) for
@@ -16947,6 +17095,13 @@ export interface AndroidDevice {
        */
       urlFilter?: string|RegExp;
     };
+
+    /**
+     * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
+     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
+     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     */
+    recordSelectors?: boolean;
 
     /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
@@ -20383,6 +20538,55 @@ export const selectors: Selectors;
 export const webkit: BrowserType;
 
 /**
+ * - Qanary fork
+ *
+ * Represents the payload emitted by
+ * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction)
+ * and [page.on('recorderaction')](https://playwright.dev/docs/api/class-page#page-event-recorderaction).
+ */
+export interface RecorderActionPayload {
+  /**
+   * Recorded user action type. One of `'check'`, `'click'`, `'closePage'`, `'fill'`, `'hover'`, `'navigate'`,
+   * `'openPage'`, `'press'`, `'select'`, `'setInputFiles'`, `'uncheck'`, `'assertText'`, `'assertValue'`,
+   * `'assertChecked'`, `'assertVisible'`, `'assertSnapshot'`.
+   */
+  action: string;
+
+  /**
+   * Element role (for example `'button'`, `'link'`) if detected.
+   */
+  role: string;
+
+  /**
+   * The primary selector Playwright generated for the element.
+   */
+  selector: string;
+
+  /**
+   * Additional selectors ranked from best to worst. May be empty.
+   */
+  selectors: Array<string>;
+
+  /**
+   * Value recorded for value-carrying actions considered sensitive or not, based on input type (eg. `password` or not).
+   */
+  sensitive: boolean;
+
+  /**
+   * Element text captured at the moment of the action, if any.
+   */
+  text: string;
+
+  /**
+   * Value recorded for value-carrying actions. For example, the text passed to `locator.fill()` or the list of files
+   * passed to `setInputFiles()`.
+   *
+   * Element text captured at the moment of the action, if any.
+   */
+  value: string;
+}
+
+/**
  * Whenever the page sends a request for a network resource the following sequence of events are emitted by
  * [Page](https://playwright.dev/docs/api/class-page):
  * - [page.on('request')](https://playwright.dev/docs/api/class-page#page-event-request) emitted when the request is
@@ -22334,6 +22538,13 @@ export interface BrowserContextOptions {
      */
     urlFilter?: string|RegExp;
   };
+
+  /**
+   * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
+   * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
+   * sensitive }` describing the action so you can consume the selectors in your own tooling.
+   */
+  recordSelectors?: boolean;
 
   /**
    * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.

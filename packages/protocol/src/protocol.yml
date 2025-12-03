@@ -1327,6 +1327,7 @@ BrowserContext:
           literals:
           - default
           - api
+        collectSelectors: boolean?
         pauseOnNextStatement: boolean?
         testIdAttributeName: string?
         launchOptions: json?
@@ -1534,14 +1535,6 @@ Page:
       title: Get selected text
       returns:
         text: string
-
-    selectorAtPoint:
-      title: Retrieve selector corresponding to the coordinates
-      parameters:
-        x: float
-        y: float
-      returns:
-        selector: string
 
     addInitScript:
       title: Add init script

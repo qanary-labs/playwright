@@ -43,6 +43,7 @@ export type ActionBase = {
 
 export type ActionWithSelector = ActionBase & {
   selector: string,
+  selectors?: string[],
   ref?: string,
 };
 
@@ -70,6 +71,7 @@ export type UncheckAction = ActionWithSelector & {
 export type FillAction = ActionWithSelector & {
   name: 'fill',
   text: string,
+  sensitive: boolean;
 };
 
 export type NavigateAction = ActionBase & {

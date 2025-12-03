@@ -90,6 +90,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
   private _listeners: RegisteredListener[] = [];
   private _enabled: boolean = false;
   private _callLogs: CallLog[] = [];
+  private _collectSelectors: boolean;
 
   static forContext(context: BrowserContext, params: channels.BrowserContextEnableRecorderParams): Promise<Recorder> {
     let recorderPromise = (context as any)[recorderSymbol] as Promise<Recorder>;
@@ -118,6 +119,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
     this._mode = params.mode || 'none';
     this._recorderMode = params.recorderMode ?? 'default';
     this.handleSIGINT = params.handleSIGINT;
+    this._collectSelectors = !!params.collectSelectors;
 
     this._signalProcessor = new RecorderSignalProcessor({
       addAction: (actionInContext: actions.ActionInContext) => {
@@ -188,7 +190,10 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
 
       await this._context.exposeBinding(progress, '__pw_recorderElementPicked', false, async ({ frame }, elementInfo: ElementInfo) => {
         const selectorChain = await generateFrameSelector(frame);
-        this.emit(RecorderEvent.ElementPicked, { selector: buildFullSelector(selectorChain, elementInfo.selector), ariaSnapshot: elementInfo.ariaSnapshot }, true);
+        this.emit(RecorderEvent.ElementPicked, {
+          selector: buildFullSelector(selectorChain, elementInfo.selector),
+          ariaSnapshot: elementInfo.ariaSnapshot
+        }, true);
       });
 
       await this._context.exposeBinding(progress, '__pw_recorderSetMode', false, async ({ frame }, mode: Mode) => {
@@ -225,7 +230,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
       await this._context.exposeBinding(progress, '__pw_recorderRecordAction', false,
           (source: BindingSource, action: actions.Action) => this._recordAction(source.frame, action));
 
-      await this._context.extendInjectedScript(rawRecorderSource.source, { recorderMode: this._recorderMode });
+      await this._context.extendInjectedScript(rawRecorderSource.source, { recorderMode: this._recorderMode, collectSelectors: this._collectSelectors, hideOverlay: this._collectSelectors });
     });
 
     if (this._debugger.isPaused())
