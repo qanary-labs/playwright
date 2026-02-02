@@ -252,7 +252,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       case 'fill':
         return (action as actions.FillAction).text;
       case 'press':
-        return (action as actions.PressAction).key;
+        return this._pressValue(action as actions.PressAction);
       case 'assertText':
         return (action as actions.AssertTextAction).text;
       case 'assertValue':
@@ -262,6 +262,24 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       default:
         return undefined;
     }
+  }
+
+  private _pressValue(action: actions.PressAction): string {
+    const modifiers = action.modifiers ?? 0;
+    if (!modifiers)
+      return action.key;
+    const parts: string[] = [];
+    if (modifiers & 2)
+      parts.push('Control');
+    if (modifiers & 1)
+      parts.push('Alt');
+    if (modifiers & 8)
+      parts.push('Shift');
+    if (modifiers & 4)
+      parts.push('Meta');
+
+    parts.push(action.key);
+    return parts.join('+');
   }
 
   private _actionSensitive(action: actions.Action): boolean {
