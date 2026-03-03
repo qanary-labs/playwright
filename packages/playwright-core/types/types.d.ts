@@ -10573,7 +10573,8 @@ export interface Browser {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
+     * tooling.
      */
     recordSelectors?: boolean;
 
@@ -15981,7 +15982,8 @@ export interface BrowserType<Unused = {}> {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
+     * tooling.
      */
     recordSelectors?: boolean;
 
@@ -20584,6 +20586,17 @@ export interface RecorderActionPayload {
   action: string;
 
   /**
+   * The `id` of the closest form for the component targeted by locator, or an empty string when there is no form or the
+   * form has no `id`.
+   */
+  formId: string;
+
+  /**
+   * Whether the component targeted by locator is inside a form.
+   */
+  isInForm: boolean;
+
+  /**
    * Element role (for example `'button'`, `'link'`) if detected.
    */
   role: string;
@@ -20604,6 +20617,11 @@ export interface RecorderActionPayload {
   sensitive: boolean;
 
   /**
+   * Whether the component targeted by locator is a form submitter.
+   */
+  submitter: boolean;
+
+  /**
    * Element text captured at the moment of the action, if any.
    */
   text: string;
@@ -20611,8 +20629,6 @@ export interface RecorderActionPayload {
   /**
    * Value recorded for value-carrying actions. For example, the text passed to `locator.fill()` or the list of files
    * passed to `setInputFiles()`.
-   *
-   * Element text captured at the moment of the action, if any.
    */
   value: string;
 }
@@ -23007,7 +23023,8 @@ export interface AndroidDevice {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive }` describing the action so you can consume the selectors in your own tooling.
+     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
+     * tooling.
      */
     recordSelectors?: boolean;
 
@@ -24189,7 +24206,8 @@ export interface BrowserContextOptions {
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
    * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-   * sensitive }` describing the action so you can consume the selectors in your own tooling.
+   * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
+   * tooling.
    */
   recordSelectors?: boolean;
 

@@ -222,6 +222,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       text: metadata.text,
       sensitive: sensitive,
       value: value,
+      submitter: !!action.submitter,
+      formId: action.formId || '',
+      isInForm: !!action.isInForm,
     };
   }
 

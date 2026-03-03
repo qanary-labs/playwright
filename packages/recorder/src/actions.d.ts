@@ -44,6 +44,9 @@ export type ActionBase = {
 export type ActionWithSelector = ActionBase & {
   selector: string,
   selectors?: string[],
+  submitter?: boolean,
+  formId?: string,
+  isInForm?: boolean,
   ref?: string,
 };
 

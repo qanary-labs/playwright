@@ -290,7 +290,7 @@ class RecordActionTool implements RecorderTool {
           signals: [],
           button: buttonForEvent(event),
           modifiers: modifiersForEvent(event),
-          clickCount: event.detail
+          clickCount: event.detail,
         },
         timeout: this._recorder.injectedScript.utils.builtins.setTimeout(() => this._commitPendingClickAction(), 200)
       };
@@ -320,7 +320,7 @@ class RecordActionTool implements RecorderTool {
       signals: [],
       button: buttonForEvent(event),
       modifiers: modifiersForEvent(event),
-      clickCount: event.detail
+      clickCount: event.detail,
     });
   }
 
@@ -467,7 +467,7 @@ class RecordActionTool implements RecorderTool {
         selector: this._activeModel!.selector,
         selectors: this._activeModel!.selectors,
         options: [...selectElement.selectedOptions].map(option => option.value),
-        signals: []
+        signals: [],
       });
     }
   }
@@ -809,6 +809,7 @@ class JsonRecordActionTool implements RecorderTool {
 
     const checkbox = asCheckbox(element);
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (checkbox && event.detail === 1) {
       // Interestingly, inputElement.checked is reversed inside this event handler.
       void this._recorder.recordAction({
@@ -818,6 +819,9 @@ class JsonRecordActionTool implements RecorderTool {
         ref,
         signals: [],
         ariaSnapshot,
+        submitter: submitter,
+        formId: formId,
+        isInForm: isInForm,
       });
       return;
     }
@@ -833,12 +837,16 @@ class JsonRecordActionTool implements RecorderTool {
       button: buttonForEvent(event),
       modifiers: modifiersForEvent(event),
       clickCount: event.detail,
+      submitter: submitter,
+      formId: formId,
+      isInForm: isInForm,
     });
   }
 
   onContextMenu(event: MouseEvent): void {
     const element = this._recorder.deepEventTarget(event);
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { submitter, formId, isInForm } = this._formDataForTarget(element);
     void this._recorder.recordAction({
       name: 'click',
       selector,
@@ -850,13 +858,16 @@ class JsonRecordActionTool implements RecorderTool {
       button: 'right',
       modifiers: modifiersForEvent(event),
       clickCount: 1,
+      submitter: submitter,
+      formId: formId,
+      isInForm: isInForm,
     });
   }
 
   onInput(event: Event) {
     const element = this._recorder.deepEventTarget(event);
-
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (isRangeInput(element)) {
       void this._recorder.recordAction({
         name: 'fill',
@@ -867,6 +878,9 @@ class JsonRecordActionTool implements RecorderTool {
         signals: [],
         text: element.value,
         sensitive: false,
+        submitter: submitter,
+        formId: formId,
+        isInForm: isInForm,
       });
       return;
     }
@@ -886,6 +900,9 @@ class JsonRecordActionTool implements RecorderTool {
         signals: [],
         text: element.isContentEditable ? element.innerText : (element as HTMLInputElement).value,
         sensitive: (element as HTMLInputElement).type.toLowerCase() === 'password',
+        submitter: submitter,
+        formId: formId,
+        isInForm: isInForm,
       });
       return;
     }
@@ -899,7 +916,10 @@ class JsonRecordActionTool implements RecorderTool {
         ref,
         ariaSnapshot,
         options: [...selectElement.selectedOptions].map(option => option.value),
-        signals: []
+        signals: [],
+        submitter: submitter,
+        formId: formId,
+        isInForm: isInForm,
       });
       return;
     }
@@ -911,6 +931,7 @@ class JsonRecordActionTool implements RecorderTool {
 
     const element = this._recorder.deepEventTarget(event);
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { submitter, formId, isInForm } = this._formDataForTarget(element);
 
     // Similarly to click, trigger checkbox on key event, not input.
     if (event.key === ' ') {
@@ -923,6 +944,9 @@ class JsonRecordActionTool implements RecorderTool {
           ref,
           ariaSnapshot,
           signals: [],
+          submitter: submitter,
+          formId: formId,
+          isInForm: isInForm,
         });
         return;
       }
@@ -935,6 +959,9 @@ class JsonRecordActionTool implements RecorderTool {
       ref,
       ariaSnapshot,
       signals: [],
+      submitter: submitter,
+      formId: formId,
+      isInForm: isInForm,
       key: event.key,
       modifiers: modifiersForEvent(event),
     });
@@ -996,6 +1023,35 @@ class JsonRecordActionTool implements RecorderTool {
     const ref = element ? refs.get(element) : undefined;
     const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName }) : undefined;
     return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.selectors, ref };
+  }
+
+  private _formDataForTarget(target: HTMLElement): { submitter: boolean, formId: string, isInForm: boolean };
+  private _formDataForTarget(target: HTMLElement | undefined): { submitter?: boolean, formId?: string, isInForm?: boolean };
+  private _formDataForTarget(target: HTMLElement | undefined): { submitter?: boolean, formId?: string, isInForm?: boolean } {
+    if (!target)
+      return {};
+    const form = this._closestForm(target);
+    return {
+      submitter: this._isSubmitter(target),
+      formId: form?.id || '',
+      isInForm: !!form,
+    };
+  }
+
+  private _isSubmitter(element: HTMLElement | null): boolean {
+    if (!element)
+      return false;
+    if (element instanceof HTMLButtonElement)
+      return element.type === 'submit' || !element.hasAttribute('type');
+    if (element instanceof HTMLInputElement)
+      return element.type === 'submit' || element.type === 'image';
+    return false;
+  }
+
+  private _closestForm(element: HTMLElement | null): HTMLFormElement | null {
+    if (!element)
+      return null;
+    return element.closest('form');
   }
 }
 

@@ -40,10 +40,26 @@ Element text captured at the moment of the action, if any.
 
 Value recorded for value-carrying actions. For example, the text passed to `locator.fill()` or the list of files passed to `setInputFiles()`.
 
-Element text captured at the moment of the action, if any.
-
 ## property: RecorderActionPayload.sensitive
 * since: v1.57
 - type: <[boolean]>
 
 Value recorded for value-carrying actions considered sensitive or not, based on input type (eg. `password` or not).
+
+## property: RecorderActionPayload.submitter
+* since: v1.57
+- type: <[boolean]>
+
+Whether the component targeted by locator is a form submitter.
+
+## property: RecorderActionPayload.formId
+* since: v1.57
+- type: <[string]>
+
+The `id` of the closest form for the component targeted by locator, or an empty string when there is no form or the form has no `id`.
+
+## property: RecorderActionPayload.isInForm
+* since: v1.57
+- type: <[boolean]>
+
+Whether the component targeted by locator is inside a form.
