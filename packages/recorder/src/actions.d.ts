@@ -100,6 +100,7 @@ export type PressAction = ActionWithSelector & {
 export type SelectAction = ActionWithSelector & {
   name: 'select',
   options: string[],
+  displayValue?: string,
 };
 
 export type SetInputFilesAction = ActionWithSelector & {

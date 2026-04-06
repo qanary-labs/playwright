@@ -63,3 +63,9 @@ The `id` of the closest form for the component targeted by locator, or an empty 
 - type: <[boolean]>
 
 Whether the component targeted by locator is inside a form.
+
+## property: RecorderActionPayload.displayValue
+* since: v1.57
+- type: <[string]>
+
+Human-readable representation of the selected value(s). For `'select'` actions, contains the visible labels of the selected options, separated by `", "`.

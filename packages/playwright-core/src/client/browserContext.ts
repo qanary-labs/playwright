@@ -214,6 +214,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     const metadata = this._metadataFromSelectors(action.selector, action.selectors || []);
     const value = this._actionValue(actionInContext.action as actions.Action);
     const sensitive = this._actionSensitive(actionInContext.action as actions.Action);
+    const selectAction = action.name === 'select' ? action as actions.SelectAction : null;
     return {
       action: action.name,
       selector: action.selector,
@@ -225,6 +226,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       submitter: !!action.submitter,
       formId: action.formId || '',
       isInForm: !!action.isInForm,
+      displayValue: selectAction?.displayValue || '',
     };
   }
 
@@ -260,6 +262,8 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
         return (action as actions.AssertTextAction).text;
       case 'assertValue':
         return (action as actions.AssertValueAction).value;
+      case 'select':
+        return (action as actions.SelectAction).options.join(', ');
       case 'setInputFiles':
         return (action as actions.SetInputFilesAction).files.join(', ');
       default:

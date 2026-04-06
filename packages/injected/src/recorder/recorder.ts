@@ -916,6 +916,7 @@ class JsonRecordActionTool implements RecorderTool {
         ref,
         ariaSnapshot,
         options: [...selectElement.selectedOptions].map(option => option.value),
+        displayValue: [...selectElement.selectedOptions].map(option => option.label || option.text).join(', '),
         signals: [],
         submitter: submitter,
         formId: formId,

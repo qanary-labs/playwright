@@ -20586,6 +20586,12 @@ export interface RecorderActionPayload {
   action: string;
 
   /**
+   * Human-readable representation of the selected value(s). For `'select'` actions, contains the visible labels of the
+   * selected options, separated by `", "`.
+   */
+  displayValue: string;
+
+  /**
    * The `id` of the closest form for the component targeted by locator, or an empty string when there is no form or the
    * form has no `id`.
    */
