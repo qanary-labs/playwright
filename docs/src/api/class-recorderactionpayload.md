@@ -64,6 +64,12 @@ The `id` of the closest form for the component targeted by locator, or an empty 
 
 Whether the component targeted by locator is inside a form.
 
+## property: RecorderActionPayload.frameSelectors
+* since: v1.57
+- type: <[Array]<[Array]<[string]>>>
+
+Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is an array of selectors ranked from best to worst for the corresponding iframe element. Only present when the target element is inside an iframe.
+
 ## property: RecorderActionPayload.displayValue
 * since: v1.57
 - type: <[string]>

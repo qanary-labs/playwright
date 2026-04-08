@@ -168,6 +168,7 @@ export type FrameDescription = {
   pageGuid: string;
   pageAlias: string;
   framePath: string[];
+  frameSelectors?: string[][];
 };
 
 export type ActionInContext = {

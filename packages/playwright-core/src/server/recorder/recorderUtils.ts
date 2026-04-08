@@ -115,8 +115,8 @@ export function collapseActions(actions: actions.ActionInContext[]): actions.Act
   return result;
 }
 
-export async function generateFrameSelector(progress: Progress, frame: Frame): Promise<string[]> {
-  const selectorPromises: Promise<string>[] = [];
+export async function generateFrameSelector(progress: Progress, frame: Frame): Promise<{ framePath: string[], frameSelectors: string[][] }> {
+  const selectorPromises: Promise<{ selector: string, selectors: string[] }>[] = [];
   progress.setAllowConcurrentOrNestedRaces(true);
   while (frame) {
     const parent = frame.parentFrame();
@@ -125,12 +125,16 @@ export async function generateFrameSelector(progress: Progress, frame: Frame): P
     selectorPromises.push(generateFrameSelectorInParent(progress, parent, frame));
     frame = parent;
   }
-  const result = await Promise.all(selectorPromises);
+  const results = await Promise.all(selectorPromises);
   progress.setAllowConcurrentOrNestedRaces(false);
-  return result.reverse();
+  results.reverse();
+  return {
+    framePath: results.map(r => r.selector),
+    frameSelectors: results.map(r => r.selectors),
+  };
 }
 
-async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, frame: Frame): Promise<string> {
+async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, frame: Frame): Promise<{ selector: string, selectors: string[] }> {
   const result = await raceAgainstDeadline(async () => {
     try {
       const frameElement = await frame.frameElement(prgoress);
@@ -138,17 +142,19 @@ async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, 
         return;
       const utility = await parent.utilityContext();
       const injected = await utility.injectedScript();
-      const selector = await injected.evaluate((injected, element) => {
-        return injected.generateSelectorSimple(element as Element);
+      const generated = await injected.evaluate((injected, element) => {
+        const result = injected.generateSelector(element as Element, { testIdAttributeName: 'data-testid', multiple: true });
+        return { selector: result.selector, selectors: result.selectors };
       }, frameElement);
-      return selector;
+      return generated;
     } catch (e) {
     }
   }, monotonicTime() + 2000);
   if (!result.timedOut && result.result)
-    return result.result;
+    return { selector: result.result.selector, selectors: result.result.selectors };
 
-  if (frame.name())
-    return `iframe[name=${quoteCSSAttributeValue(frame.name())}]`;
-  return `iframe[src=${quoteCSSAttributeValue(frame.url())}]`;
+  const fallback = frame.name()
+    ? `iframe[name=${quoteCSSAttributeValue(frame.name())}]`
+    : `iframe[src=${quoteCSSAttributeValue(frame.url())}]`;
+  return { selector: fallback, selectors: [fallback] };
 }

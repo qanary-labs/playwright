@@ -198,8 +198,8 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
       });
 
       await this._context.exposeBinding(progress, '__pw_recorderElementPicked', async ({ frame }, elementInfo: ElementInfo) => {
-        const selectorChain = await generateFrameSelector(progress, frame);
-        this.emit(RecorderEvent.ElementPicked, { selector: buildFullSelector(selectorChain, elementInfo.selector), ariaSnapshot: elementInfo.ariaSnapshot }, true);
+        const { framePath } = await generateFrameSelector(progress, frame);
+        this.emit(RecorderEvent.ElementPicked, { selector: buildFullSelector(framePath, elementInfo.selector), ariaSnapshot: elementInfo.ariaSnapshot }, true);
       });
 
       await this._context.exposeBinding(progress, '__pw_recorderSetMode', async ({ frame }, mode: Mode) => {
@@ -552,11 +552,15 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
   }
 
   private async _describeFrame(progress: Progress, frame: Frame): Promise<actions.FrameDescription> {
-    return {
+    const { framePath, frameSelectors } = await generateFrameSelector(progress, frame);
+    const description: actions.FrameDescription = {
       pageGuid: frame._page.guid,
       pageAlias: this._pageAliases.get(frame._page)!,
-      framePath: await generateFrameSelector(progress, frame),
+      framePath,
     };
+    if (framePath.length > 0)
+      description.frameSelectors = frameSelectors;
+    return description;
   }
 
   private _testIdAttributeName(): string {

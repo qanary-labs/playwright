@@ -215,7 +215,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     const value = this._actionValue(actionInContext.action as actions.Action);
     const sensitive = this._actionSensitive(actionInContext.action as actions.Action);
     const selectAction = action.name === 'select' ? action as actions.SelectAction : null;
-    return {
+    const result: Record<string, any> = {
       action: action.name,
       selector: action.selector,
       selectors: action.selectors || [],
@@ -228,6 +228,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       isInForm: !!action.isInForm,
       displayValue: selectAction?.displayValue || '',
     };
+    if (actionInContext.frame.frameSelectors)
+      result.frameSelectors = actionInContext.frame.frameSelectors;
+    return result;
   }
 
   private _metadataFromSelectors(primary: string, selectors: string[]): { role?: string, text?: string } {

@@ -10573,8 +10573,8 @@ export interface Browser {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
-     * tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
+     * your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -15982,8 +15982,8 @@ export interface BrowserType<Unused = {}> {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
-     * tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
+     * your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -20598,6 +20598,13 @@ export interface RecorderActionPayload {
   formId: string;
 
   /**
+   * Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is an
+   * array of selectors ranked from best to worst for the corresponding iframe element. Only present when the target
+   * element is inside an iframe.
+   */
+  frameSelectors: Array<Array<string>>;
+
+  /**
    * Whether the component targeted by locator is inside a form.
    */
   isInForm: boolean;
@@ -23029,8 +23036,8 @@ export interface AndroidDevice {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
-     * tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
+     * your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -24212,8 +24219,8 @@ export interface BrowserContextOptions {
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
    * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-   * sensitive, submitter, formId, isInForm }` describing the action so you can consume the selectors in your own
-   * tooling.
+   * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
+   * your own tooling.
    */
   recordSelectors?: boolean;
 

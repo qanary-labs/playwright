@@ -74,13 +74,16 @@ export class RecorderSignalProcessor {
       return;
     }
 
-    generateFrameSelector(nullProgress, frame).then(framePath => {
+    generateFrameSelector(nullProgress, frame).then(({ framePath, frameSelectors }) => {
+      const frame_: actions.FrameDescription = {
+        pageGuid: frame._page.guid,
+        pageAlias,
+        framePath,
+      };
+      if (framePath.length > 0)
+        frame_.frameSelectors = frameSelectors;
       const signalInContext: actions.SignalInContext = {
-        frame: {
-          pageGuid: frame._page.guid,
-          pageAlias,
-          framePath,
-        },
+        frame: frame_,
         signal,
         timestamp,
       };
