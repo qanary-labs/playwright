@@ -808,6 +808,13 @@ class JsonRecordActionTool implements RecorderTool {
       return;
 
     const checkbox = asCheckbox(element);
+    // A click on a <label> associated to a checkbox/radio fires twice: the user-initiated click on
+    // the label (detail===1), then a synthetic forwarded click on the input (detail===0). Drop the
+    // synthetic one — the label click is recorded as a regular click below, which on replay forwards
+    // to the input via the browser's native label semantics (works even when the input is visually
+    // hidden, as in Bootstrap custom-controls / MUI / shadcn checkboxes & radios).
+    if (checkbox && event.detail === 0)
+      return;
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (checkbox && event.detail === 1) {
