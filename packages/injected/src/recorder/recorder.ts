@@ -1494,6 +1494,11 @@ export class Recorder {
   private _lastHighlightedSelector: string | undefined = undefined;
   private _lastHighlightedAriaTemplateJSON: string = 'undefined';
   private _lastActionAutoexpectSnapshot: AriaSnapshot | undefined;
+  // Track the most recent trusted click so we can recognize a delayed synthetic
+  // re-dispatch of the same click (cookie-consent / outbound-link trackers that
+  // intercept, beacon, and re-fire via element.click()). See _onClick().
+  private _lastTrustedClickAt = 0;
+  private _lastTrustedClickPath: EventTarget[] = [];
   readonly highlight: Highlight;
   readonly overlay: Overlay | undefined;
   private _stylesheet: CSSStyleSheet;
@@ -1523,7 +1528,12 @@ export class Recorder {
       'assertingValue': new TextAssertionTool(this, 'value'),
       'assertingSnapshot': new TextAssertionTool(this, 'snapshot'),
     };
-    this._currentTool = this._tools.none;
+    // When the embedder already knows it wants the recording tool (recorderMode
+    // === 'api'), skip the NoneTool transient state. Otherwise the first click
+    // on a freshly-loaded page can land before the initial __pw_recorderState
+    // round-trip flips the tool, and gets silently dropped because NoneTool has
+    // no onClick handler.
+    this._currentTool = options?.recorderMode === 'api' ? this._tools.recording : this._tools.none;
     this._currentTool.install?.();
     if (injectedScript.window.top === injectedScript.window && !options?.hideToolbar) {
       this.overlay = new Overlay(this);
@@ -1657,13 +1667,49 @@ export class Recorder {
   }
 
   private _onClick(event: MouseEvent) {
-    if (!event.isTrusted)
+    // Accept synthetic clicks only when they look like a delayed echo of a
+    // recent user click on the same DOM region — the pattern used by cookie-
+    // consent platforms (CookieYes, OneTrust, Tarteaucitron) and outbound-link
+    // trackers that intercept the trusted click at capture phase, do async
+    // work, then re-fire via element.click(). Other synthetic clicks (carousel
+    // auto-advance, programmatic .click() from page code) are still ignored to
+    // preserve test fidelity on replay.
+    //
+    // The trusted-click anchor is sourced from _onPointerUp / _onMouseUp, NOT
+    // from the trusted click event itself: interceptors typically call
+    // stopImmediatePropagation on the click in capture phase, so by the time
+    // this isolated-world listener would run, the click event has already
+    // been suppressed. pointerup/mouseup are not intercepted in the cases we
+    // observed, so we use whichever fires first as the anchor.
+    if (!event.isTrusted && !this._isSyntheticClickEcho(event))
       return;
     if (this.overlay?.onClick(event))
       return;
     if (this._ignoreOverlayEvent(event))
       return;
     this._currentTool.onClick?.(event);
+  }
+
+  private _isSyntheticClickEcho(event: MouseEvent): boolean {
+    const ECHO_WINDOW_MS = 2000;
+    const dt = this.injectedScript.utils.builtins.Date.now() - this._lastTrustedClickAt;
+    if (dt > ECHO_WINDOW_MS)
+      return false;
+    const syntheticTarget = event.composedPath()[0];
+    const trustedTarget = this._lastTrustedClickPath[0];
+    if (!(syntheticTarget instanceof Node) || !(trustedTarget instanceof Node))
+      return false;
+    // The synthetic dispatch lands in the same DOM region as the trusted
+    // pointerup when one of:
+    //   syntheticTarget is the trusted target or an ancestor already on the
+    //     trusted composedPath;
+    //   syntheticTarget is a descendant of the trusted target (interceptor
+    //     narrowed dispatch to a deeper child);
+    //   syntheticTarget is a wrapper that contains the trusted target
+    //     (interceptor wrapped the link and dispatched on the wrapper).
+    return this._lastTrustedClickPath.includes(syntheticTarget)
+      || trustedTarget.contains(syntheticTarget)
+      || syntheticTarget.contains(trustedTarget);
   }
 
   private _onDblClick(event: MouseEvent) {
@@ -1703,6 +1749,14 @@ export class Recorder {
   }
 
   private _onPointerUp(event: PointerEvent) {
+    if (event.isTrusted) {
+      // Anchor for the synthetic-click-echo check in _onClick. pointerup is
+      // preferred over mouseup because some interceptors (CookieYes) hook the
+      // mouse-event sub-tree (mousedown/mouseup/click) and re-fire it
+      // synthetically after async work, while leaving pointer events alone.
+      this._lastTrustedClickAt = this.injectedScript.utils.builtins.Date.now();
+      this._lastTrustedClickPath = event.composedPath();
+    }
     if (!event.isTrusted)
       return;
     if (this._ignoreOverlayEvent(event))
@@ -1719,6 +1773,12 @@ export class Recorder {
   }
 
   private _onMouseUp(event: MouseEvent) {
+    if (event.isTrusted) {
+      // Fallback anchor in case pointer events are not dispatched in this
+      // environment. _onPointerUp normally wins because it fires first.
+      this._lastTrustedClickAt = this.injectedScript.utils.builtins.Date.now();
+      this._lastTrustedClickPath = event.composedPath();
+    }
     if (!event.isTrusted)
       return;
     if (this.overlay?.onMouseUp(event))
