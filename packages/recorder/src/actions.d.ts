@@ -48,6 +48,7 @@ export type ActionWithSelector = ActionBase & {
   formId?: string,
   isInForm?: boolean,
   ref?: string,
+  cookieBanner?: string,
 };
 
 export type ClickAction = ActionWithSelector & {

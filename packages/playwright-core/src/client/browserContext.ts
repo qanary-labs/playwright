@@ -227,6 +227,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       formId: action.formId || '',
       isInForm: !!action.isInForm,
       displayValue: selectAction?.displayValue || '',
+      cookieBanner: action.cookieBanner || '',
     };
     if (actionInContext.frame.frameSelectors)
       result.frameSelectors = actionInContext.frame.frameSelectors;

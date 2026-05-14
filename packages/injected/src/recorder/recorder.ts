@@ -829,6 +829,7 @@ class JsonRecordActionTool implements RecorderTool {
         submitter: submitter,
         formId: formId,
         isInForm: isInForm,
+        cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
       });
       return;
     }
@@ -847,6 +848,7 @@ class JsonRecordActionTool implements RecorderTool {
       submitter: submitter,
       formId: formId,
       isInForm: isInForm,
+      cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
     });
   }
 
@@ -868,6 +870,7 @@ class JsonRecordActionTool implements RecorderTool {
       submitter: submitter,
       formId: formId,
       isInForm: isInForm,
+      cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
     });
   }
 
@@ -888,6 +891,7 @@ class JsonRecordActionTool implements RecorderTool {
         submitter: submitter,
         formId: formId,
         isInForm: isInForm,
+        cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
       });
       return;
     }
@@ -910,6 +914,7 @@ class JsonRecordActionTool implements RecorderTool {
         submitter: submitter,
         formId: formId,
         isInForm: isInForm,
+        cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
       });
       return;
     }
@@ -928,6 +933,7 @@ class JsonRecordActionTool implements RecorderTool {
         submitter: submitter,
         formId: formId,
         isInForm: isInForm,
+        cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
       });
       return;
     }
@@ -955,6 +961,7 @@ class JsonRecordActionTool implements RecorderTool {
           submitter: submitter,
           formId: formId,
           isInForm: isInForm,
+          cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
         });
         return;
       }
@@ -972,6 +979,7 @@ class JsonRecordActionTool implements RecorderTool {
       isInForm: isInForm,
       key: event.key,
       modifiers: modifiersForEvent(event),
+      cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
     });
   }
 
@@ -2072,6 +2080,26 @@ function asCheckbox(node: Node | null): HTMLInputElement | null {
     return null;
   const inputElement = node as HTMLInputElement;
   return ['checkbox', 'radio'].includes(inputElement.type) ? inputElement : null;
+}
+
+// Detect a cookie/consent banner ancestor tagged by an external in-page detector. The attribute
+// name is opt-in via `window.__pwCookieBannerAttribute`; when unset the feature is off. Walks
+// across open shadow roots so events captured inside a CMP's shadow DOM resolve to the host-tagged
+// root.
+function detectCookieBanner(injectedScript: InjectedScript, element: Element): string | undefined {
+  const attr = (injectedScript.window as any).__pwCookieBannerAttribute as string | undefined;
+  if (!attr)
+    return undefined;
+  const selector = `[${injectedScript.window.CSS.escape(attr)}]`;
+  let current: Element | null = element;
+  while (current) {
+    const banner = current.closest(selector);
+    if (banner)
+      return banner.getAttribute(attr) || undefined;
+    const root = current.getRootNode();
+    current = root instanceof injectedScript.window.ShadowRoot ? root.host : null;
+  }
+  return undefined;
 }
 
 function isRangeInput(node: Node | null): node is HTMLInputElement {

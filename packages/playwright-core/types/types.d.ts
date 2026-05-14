@@ -20586,6 +20586,14 @@ export interface RecorderActionPayload {
   action: string;
 
   /**
+   * Identifier of the cookie/consent banner ancestor of the action target, when the target element (or any of its
+   * ancestors, including across open shadow roots) carries the data attribute named in
+   * `window.__pwCookieBannerAttribute`. The value is the attribute's value (typically a vendor name like `"onetrust"`
+   * or a generic tag set by the consumer). Empty string when no banner ancestor was found or the global is unset.
+   */
+  cookieBanner: string;
+
+  /**
    * Human-readable representation of the selected value(s). For `'select'` actions, contains the visible labels of the
    * selected options, separated by `", "`.
    */
