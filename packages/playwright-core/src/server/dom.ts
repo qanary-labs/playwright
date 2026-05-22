@@ -543,8 +543,35 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return assertDone(throwRetargetableDOMError(result));
   }
 
-  _click(progress: Progress, options: { waitAfter: boolean | 'disabled' } & types.MouseClickOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'click', true /* waitForEnabled */, (progress, point) => this._page.mouse.click(progress, point.x, point.y, options), options);
+  async _click(progress: Progress, options: { waitAfter: boolean | 'disabled' } & types.MouseClickOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    // For checkbox/radio inputs that are hidden (custom-checkbox patterns like Bootstrap
+    // .custom-control-input), redirect the click to the associated label — the browser
+    // forwards label clicks to the input via the `for` / wrapping association. Only do
+    // this when the input itself is not hit-testable AND the label has no nested
+    // interactive descendants (links, buttons, …) that would swallow the click.
+    const labelHandle = await progress.race(this._evaluateHandleInUtility(([, node]): Element | undefined => {
+      if (node.nodeName !== 'INPUT')
+        return;
+      const input = node as unknown as HTMLInputElement;
+      if (input.type !== 'checkbox' && input.type !== 'radio')
+        return;
+      const labels = input.labels;
+      if (!labels || labels.length === 0)
+        return;
+      const rect = input.getBoundingClientRect();
+      const style = input.ownerDocument.defaultView?.getComputedStyle(input);
+      const inputHidden = rect.width === 0 || rect.height === 0
+        || style?.visibility === 'hidden' || style?.display === 'none' || style?.opacity === '0';
+      if (!inputHidden)
+        return;
+      const label = labels[0];
+      if (label.querySelector('a, button, input, select, textarea, [role="link"], [role="button"], [onclick]'))
+        return;
+      return label;
+    }, {}));
+    const labelTarget = labelHandle !== 'error:notconnected' ? labelHandle.asElement() : null;
+    const target = (labelTarget as ElementHandle<Element> | null) ?? this;
+    return target._retryPointerAction(progress, 'click', true /* waitForEnabled */, (progress, point) => this._page.mouse.click(progress, point.x, point.y, options), options);
   }
 
   async dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions): Promise<void> {
@@ -839,6 +866,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       return 'done';
     if (!state && checkedState.isRadio)
       throw new NonRecoverableDOMError('Cannot uncheck radio button. Radio buttons can only be unchecked by selecting another radio button in the same group.');
+    // _click handles the label redirect for custom-checkbox patterns; the final state
+    // check below still verifies the toggle happened.
     const result = await this._click(progress, { ...options, waitAfter: 'disabled' });
     if (result !== 'done')
       return result;

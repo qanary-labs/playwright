@@ -126,6 +126,67 @@ it('should check the label with position', async ({ page, server }) => {
   expect(await page.$eval('input', input => input.checked)).toBe(true);
 });
 
+it('should check the box when the input is hidden behind its label', async ({ page }) => {
+  // Bootstrap-style custom checkbox: the <input> is visually hidden (opacity:0, z-index:-1),
+  // and a sibling <label for="..."> is the visible clickable surface. Direct click on the
+  // input fails the hit-test (the label intercepts pointer events), so check() redirects
+  // the click to the label and the browser forwards it back to the input via the HTML
+  // spec's label activation behavior.
+  await page.setContent(`
+    <style>
+      .custom-control { position: relative; padding: 0.5rem 0 0.5rem 1.5rem; }
+      .custom-control-input {
+        position: absolute;
+        left: 0;
+        z-index: -1;
+        width: 1rem;
+        height: 1.25rem;
+        opacity: 0;
+      }
+      .custom-control-label { display: inline-block; cursor: pointer; }
+    </style>
+    <div class="custom-control custom-checkbox">
+      <input type="checkbox" class="custom-control-input" id="role">
+      <label class="custom-control-label" for="role">
+        <strong>Administrator</strong>
+        <span>Role description spanning some width.</span>
+      </label>
+    </div>`);
+  // Target the input directly — goes through the redirect path in _click.
+  await page.check('#role');
+  expect(await page.evaluate(() => window['role'].checked)).toBe(true);
+  // Reset and target the label — no redirect, pure spec-defined label activation.
+  await page.evaluate(() => { window['role'].checked = false; });
+  await page.click('label[for=role]');
+  expect(await page.evaluate(() => window['role'].checked)).toBe(true);
+});
+
+it('should check the box when wrapping label contains links', async ({ page }) => {
+  // WooCommerce-style: visible <input> wrapped by a <label> that also contains <a> links.
+  // Redirecting the click to the label's geometric center would land on a link, the HTML
+  // spec then skips label activation, and the checkbox never toggles. Verify the click
+  // goes to the input directly (no anchor click fires) and the box gets checked.
+  await page.setContent(`
+    <p class="form-row validate-required">
+      <label class="woocommerce-form__label woocommerce-form__label-for-checkbox checkbox">
+        <input type="checkbox" class="woocommerce-form__input woocommerce-form__input-checkbox input-checkbox" name="terms" id="terms">
+        <span class="woocommerce-terms-and-conditions-checkbox-text">J'accepte les <a href="https://example.com/cgv/" target="_blank">Conditions générales de vente</a> &amp; la <a href="https://example.com/privacy/" target="_blank">Politique de confidentialité</a></span>&nbsp;<abbr class="required" title="obligatoire">*</abbr>
+      </label>
+    </p>
+    <script>
+      window['anchorClicks'] = 0;
+      document.addEventListener('click', e => {
+        if (e.target.closest('a')) {
+          window['anchorClicks']++;
+          e.preventDefault();
+        }
+      }, true);
+    </script>`);
+  await page.check('#terms');
+  expect(await page.evaluate(() => window['terms'].checked)).toBe(true);
+  expect(await page.evaluate(() => window['anchorClicks'])).toBe(0);
+});
+
 it('trial run should not check', async ({ page }) => {
   await page.setContent(`<input id='checkbox' type='checkbox'></input>`);
   await page.check('input', { trial: true });
