@@ -10573,8 +10573,8 @@ export interface Browser {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
-     * your own tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
+     * the selectors in your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -15982,8 +15982,8 @@ export interface BrowserType<Unused = {}> {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
-     * your own tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
+     * the selectors in your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -20618,6 +20618,20 @@ export interface RecorderActionPayload {
   isInForm: boolean;
 
   /**
+   * Normalized click point, with each axis in `[0, 1]`, relative to the recorded element's padding box, for `'click'`
+   * actions. Multiplying these ratios by the element's padding-box size at replay reconstructs the exact point that was
+   * pressed, robust to layout/viewport changes. This also keeps replay accurate when the selector was retargeted to an
+   * interactive ancestor (for example an icon `<i>` inside a `<a>`/`<button>`): the ratios are relative to that
+   * ancestor, so the click still lands on the pressed sub-element. Absent for non-click actions and when the element's
+   * box could not be measured.
+   */
+  positionRatio?: {
+    x: number;
+
+    y: number;
+  };
+
+  /**
    * Element role (for example `'button'`, `'link'`) if detected.
    */
   role: string;
@@ -23044,8 +23058,8 @@ export interface AndroidDevice {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
-     * your own tooling.
+     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
+     * the selectors in your own tooling.
      */
     recordSelectors?: boolean;
 
@@ -24227,8 +24241,8 @@ export interface BrowserContextOptions {
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
    * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-   * sensitive, submitter, formId, isInForm, frameSelectors }` describing the action so you can consume the selectors in
-   * your own tooling.
+   * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
+   * the selectors in your own tooling.
    */
   recordSelectors?: boolean;
 

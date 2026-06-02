@@ -57,6 +57,11 @@ export type ClickAction = ActionWithSelector & {
   modifiers: number,
   clickCount: number,
   position?: Point,
+  // Normalized click point (each axis in [0,1]) relative to the recorded
+  // element's padding box, so replay can reconstruct the exact pressed point
+  // against the element's size at run time (robust to layout/viewport changes,
+  // and to selector retargeting to an interactive ancestor).
+  positionRatio?: Point,
 };
 
 export type HoverAction = ActionWithSelector & {

@@ -69,6 +69,14 @@ test('should click', async ({ context, browserName, platform, channel }) => {
   ]);
 
   expect(normalizeCode(clickActions[0].code)).toEqual(`await page.getByRole('button', { name: 'Submit' }).click();`);
+
+  // Every click records a normalized position within the recorded element's padding box.
+  const ratio = (clickActions[0].action as any).positionRatio;
+  expect(ratio).toBeTruthy();
+  expect(ratio.x).toBeGreaterThanOrEqual(0);
+  expect(ratio.x).toBeLessThanOrEqual(1);
+  expect(ratio.y).toBeGreaterThanOrEqual(0);
+  expect(ratio.y).toBeLessThanOrEqual(1);
 });
 
 test('should double click', async ({ context, browserName, platform, channel }) => {
@@ -120,6 +128,66 @@ test('should record the pressed control when a mousedown overlay steals the mous
     name: 'click',
     selector: 'internal:role=button[name="+"i]',
   }));
+});
+
+test('records a click position when retargeting to an interactive ancestor', async ({ context }) => {
+  // <a><i></i></a> where the listener is on the inner <i>: generateSelector retargets
+  // to the <a> (a robust role locator), but a center click on a padded <a> would miss
+  // the icon. The recorded action keeps the <a> selector AND a position relative to it
+  // so replay lands on the icon.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <a id="lnk" href="#" style="display:inline-block;padding:40px">
+      <i id="ico" style="display:inline-block;width:12px;height:12px;background:#000"></i>
+    </a>`);
+  await page.locator('#ico').click();
+
+  const clickActions = log.action('click');
+  expect(clickActions.length).toBe(1);
+  const action = clickActions[0].action as any;
+  // Selector targets the interactive ancestor (the link), not the inner <i>.
+  expect(action.selector).toBe('#lnk');
+  // Normalized position (0..1 of the link's padding box) so replay lands on the icon.
+  expect(action.positionRatio).toBeTruthy();
+  expect(action.positionRatio.x).toBeGreaterThan(0);
+  expect(action.positionRatio.x).toBeLessThan(1);
+  expect(action.positionRatio.y).toBeGreaterThan(0);
+  expect(action.positionRatio.y).toBeLessThan(1);
+  // The icon's normalized region within the link; the recorded ratio falls inside it.
+  const iconRatio = await page.locator('#ico').evaluate(el => {
+    const a = (el.closest('a') as HTMLElement).getBoundingClientRect();
+    const i = el.getBoundingClientRect();
+    return { left: (i.left - a.left) / a.width, top: (i.top - a.top) / a.height, right: (i.right - a.left) / a.width, bottom: (i.bottom - a.top) / a.height };
+  });
+  expect(action.positionRatio.x).toBeGreaterThanOrEqual(iconRatio.left - 0.01);
+  expect(action.positionRatio.x).toBeLessThanOrEqual(iconRatio.right + 0.01);
+  expect(action.positionRatio.y).toBeGreaterThanOrEqual(iconRatio.top - 0.01);
+  expect(action.positionRatio.y).toBeLessThanOrEqual(iconRatio.bottom + 0.01);
+});
+
+test('does not record a click position for an Enter-key implicit form submission', async ({ context }) => {
+  // Pressing Enter in a form fires a synthetic (detail === 0, clientX/Y === 0) click
+  // on the submit button. Recording positionRatio {x:0,y:0} would make replay click
+  // the padding-box corner, which misses rounded buttons. No ratio must be recorded
+  // so replay falls back to the center click.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <form onsubmit="return false">
+      <input id="user" type="text" />
+      <button id="go" type="submit" style="border-radius:9999px">Go</button>
+    </form>`);
+  await page.locator('#user').click();
+  await page.locator('#user').fill('alice');
+  await page.locator('#user').press('Enter');
+
+  // The implicit submission is recorded as a synthetic click (clickCount === 0) on
+  // the submit button, with no positionRatio.
+  const submitClick = log.action('click').find(a => (a.action as any).clickCount === 0);
+  expect(submitClick).toBeTruthy();
+  expect((submitClick!.action as any).selector).toBe('internal:role=button[name="Go"i]');
+  expect((submitClick!.action as any).positionRatio).toBeUndefined();
 });
 
 test('should right click', async ({ context, browserName, platform, channel }) => {

@@ -81,3 +81,11 @@ Human-readable representation of the selected value(s). For `'select'` actions, 
 - type: <[string]>
 
 Identifier of the cookie/consent banner ancestor of the action target, when the target element (or any of its ancestors, including across open shadow roots) carries the data attribute named in `window.__pwCookieBannerAttribute`. The value is the attribute's value (typically a vendor name like `"onetrust"` or a generic tag set by the consumer). Empty string when no banner ancestor was found or the global is unset.
+
+## property: RecorderActionPayload.positionRatio
+* since: v1.58
+- type: ?<[Object]>
+  - `x` <[float]>
+  - `y` <[float]>
+
+Normalized click point, with each axis in `[0, 1]`, relative to the recorded element's padding box, for `'click'` actions. Multiplying these ratios by the element's padding-box size at replay reconstructs the exact point that was pressed, robust to layout/viewport changes. This also keeps replay accurate when the selector was retargeted to an interactive ancestor (for example an icon `<i>` inside a `<a>`/`<button>`): the ratios are relative to that ancestor, so the click still lands on the pressed sub-element. Absent for non-click actions and when the element's box could not be measured.

@@ -830,7 +830,7 @@ class JsonRecordActionTool implements RecorderTool {
     // hidden, as in Bootstrap custom-controls / MUI / shadcn checkboxes & radios).
     if (checkbox && event.detail === 0)
       return;
-    const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (checkbox && event.detail === 1) {
       // Interestingly, inputElement.checked is reversed inside this event handler.
@@ -856,6 +856,7 @@ class JsonRecordActionTool implements RecorderTool {
       ref,
       ariaSnapshot,
       position: positionForEvent(event),
+      positionRatio: this._clickRatio(event, retargeted),
       signals: [],
       button: buttonForEvent(event),
       modifiers: modifiersForEvent(event),
@@ -869,7 +870,7 @@ class JsonRecordActionTool implements RecorderTool {
 
   onContextMenu(event: MouseEvent): void {
     const element = this._recorder.deepEventTarget(event);
-    const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     void this._recorder.recordAction({
       name: 'click',
@@ -878,6 +879,7 @@ class JsonRecordActionTool implements RecorderTool {
       ref,
       ariaSnapshot,
       position: positionForEvent(event),
+      positionRatio: this._clickRatio(event, retargeted),
       signals: [],
       button: 'right',
       modifiers: modifiersForEvent(event),
@@ -1065,12 +1067,49 @@ class JsonRecordActionTool implements RecorderTool {
     return false;
   }
 
-  private _ariaSnapshot(element: HTMLElement): { ariaSnapshot: string, selector: string, selectors?: string[], ref?: string };
-  private _ariaSnapshot(element: HTMLElement | undefined): { ariaSnapshot: string, selector?: string, selectors?: string[], ref?: string } {
+  private _ariaSnapshot(element: HTMLElement): { ariaSnapshot: string, selector: string, selectors?: string[], ref?: string, retargeted?: HTMLElement };
+  private _ariaSnapshot(element: HTMLElement | undefined): { ariaSnapshot: string, selector?: string, selectors?: string[], ref?: string, retargeted?: HTMLElement } {
     const { ariaSnapshot, refs } = this._recorder.injectedScript.ariaSnapshotForRecorder();
     const ref = element ? refs.get(element) : undefined;
     const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName }) : undefined;
-    return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.selectors, ref };
+    return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.selectors, ref, retargeted: elementInfo?.elements?.[0] as HTMLElement | undefined };
+  }
+
+  // Record where on the recorded element the click landed, as a ratio (each
+  // axis in [0,1]) of the element's padding box. `recordedElement` is the
+  // element the generated selector resolves to (after any retarget to an
+  // interactive ancestor, e.g. the <a> for an <i> inside it). Replay multiplies
+  // the ratio by the element's padding-box size at run time, so the click lands
+  // on the exact spot that was pressed - robust to responsive layout / viewport
+  // changes, and correct whether or not a retarget happened.
+  private _clickRatio(event: MouseEvent, recordedElement: HTMLElement | undefined): Point | undefined {
+    if (!recordedElement)
+      return undefined;
+    // A keyboard-driven / synthetic click (Enter implicit form submission, or
+    // Space/Enter on a focused control) has detail === 0 and clientX/clientY === 0:
+    // there is no real pointer location. Recording {x:0,y:0} would force replay to
+    // click the padding-box corner, which misses rounded buttons. Omit the ratio so
+    // replay falls back to the (robust) center click.
+    if (event.detail === 0)
+      return undefined;
+    const rect = recordedElement.getBoundingClientRect();
+    const style = recordedElement.ownerDocument.defaultView?.getComputedStyle(recordedElement);
+    const borderLeft = style ? parseFloat(style.borderLeftWidth) || 0 : 0;
+    const borderTop = style ? parseFloat(style.borderTopWidth) || 0 : 0;
+    const borderRight = style ? parseFloat(style.borderRightWidth) || 0 : 0;
+    const borderBottom = style ? parseFloat(style.borderBottomWidth) || 0 : 0;
+    // Padding box: Playwright's click position origin is the padding box, while
+    // getBoundingClientRect() is the border box. Subtract borders for exactness.
+    const width = rect.width - borderLeft - borderRight;
+    const height = rect.height - borderTop - borderBottom;
+    if (width <= 0 || height <= 0)
+      return undefined;
+    const x = (event.clientX - rect.left - borderLeft) / width;
+    const y = (event.clientY - rect.top - borderTop) / height;
+    return {
+      x: Math.min(1, Math.max(0, x)),
+      y: Math.min(1, Math.max(0, y)),
+    };
   }
 
   private _formDataForTarget(target: HTMLElement): { submitter: boolean, formId: string, isInForm: boolean };

@@ -229,6 +229,9 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       displayValue: selectAction?.displayValue || '',
       cookieBanner: action.cookieBanner || '',
     };
+    const positionRatio = (actionInContext.action as actions.ClickAction).positionRatio;
+    if (positionRatio)
+      result.positionRatio = positionRatio;
     if (actionInContext.frame.frameSelectors)
       result.frameSelectors = actionInContext.frame.frameSelectors;
     return result;
