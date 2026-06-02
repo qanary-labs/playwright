@@ -149,11 +149,20 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
     }
     const selector = selectors[0];
     const parsedSelector = injectedScript.parseSelector(selector);
-    const allSelectors = new Set(selectors);
     if (suggestionStore) {
-      for (const entry of suggestionStore.values())
-        allSelectors.add(joinTokens(entry.tokens));
-      selectors = [...allSelectors];
+      const root = options.root ?? targetElement.ownerDocument;
+      const resolvesToTarget = (sel: string) => {
+        const matches = injectedScript.querySelectorAll(injectedScript.parseSelector(sel), root);
+        return matches.length === 1 && matches[0] === targetElement;
+      };
+      const allSelectors = new Set(selectors.filter(resolvesToTarget));
+      for (const entry of suggestionStore.values()) {
+        const sel = joinTokens(entry.tokens);
+        if (resolvesToTarget(sel))
+          allSelectors.add(sel);
+      }
+      // Always keep the canonical primary selector, even if it disambiguates with nth.
+      selectors = [selector, ...[...allSelectors].filter(s => s !== selector)];
     }
     return {
       selector,
@@ -247,7 +256,7 @@ function generateSelectorFor(cache: Cache, injectedScript: InjectedScript, targe
       const cacheMap = noText ? cache.disallowText : cache.allowText;
       let parentTokens = cacheMap.get(parent);
       if (parentTokens === undefined) {
-        parentTokens = generateSelectorFor(cache, injectedScript, parent, { ...options, isRecursive: true, noText }, onSuggestion) || cssFallback(injectedScript, parent, options);
+        parentTokens = generateSelectorFor(cache, injectedScript, parent, { ...options, isRecursive: true, noText }) || cssFallback(injectedScript, parent, options);
         cacheMap.set(parent, parentTokens);
       }
       if (!parentTokens)

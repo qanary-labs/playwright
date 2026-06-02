@@ -95,6 +95,33 @@ test('should double click', async ({ context, browserName, platform, channel }) 
   expect(normalizeCode(clickActions[0].code)).toEqual(`await page.getByRole('button', { name: 'Submit' }).dblclick();`);
 });
 
+test('should record the pressed control when a mousedown overlay steals the mouseup', async ({ context }) => {
+  // Repro of bootstrap-touchspin + PrestaShop: clicking the control fires an async
+  // action on mousedown that shows a full-screen loading overlay. With the pointer
+  // held still, the overlay captures mouseup, so the browser fires the trusted click
+  // on <body> (the common ancestor of mousedown=button and mouseup=overlay). The
+  // recorded action must still point at the button, not <body>.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <div id="overlay" style="position:fixed;inset:0;display:none;z-index:9999"></div>
+    <button id="plus">+</button>
+    <script>
+      const overlay = document.getElementById('overlay');
+      document.getElementById('plus').addEventListener('mousedown', () => { overlay.style.display = 'block'; });
+      window.addEventListener('mouseup', () => { overlay.style.display = 'none'; }, true);
+    </script>
+  `);
+  await page.getByRole('button', { name: '+' }).click();
+
+  const clickActions = log.action('click');
+  expect(clickActions.length).toBe(1);
+  expect(clickActions[0].action).toEqual(expect.objectContaining({
+    name: 'click',
+    selector: 'internal:role=button[name="+"i]',
+  }));
+});
+
 test('should right click', async ({ context, browserName, platform, channel }) => {
   const log = await startRecording(context);
   const page = await context.newPage();

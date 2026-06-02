@@ -781,6 +781,10 @@ class RecordActionTool implements RecorderTool {
 
 class JsonRecordActionTool implements RecorderTool {
   private _recorder: Recorder;
+  // Element under the pointer when the primary button went down. Captured before
+  // any click handler runs so we can recover the real target when an overlay or
+  // re-render shifts the click event's target after mousedown (see onClick).
+  private _pressTarget: HTMLElement | null = null;
 
   constructor(recorder: Recorder) {
     this._recorder = recorder;
@@ -795,10 +799,21 @@ class JsonRecordActionTool implements RecorderTool {
     this._recorder.highlight.install();
   }
 
+  onPointerDown(event: PointerEvent) {
+    if (event.button === 0)
+      this._pressTarget = this._recorder.deepEventTarget(event);
+  }
+
+  onMouseDown(event: MouseEvent) {
+    // Fallback for environments that do not dispatch pointer events.
+    if (event.button === 0 && !this._pressTarget)
+      this._pressTarget = this._recorder.deepEventTarget(event);
+  }
+
   onClick(event: MouseEvent) {
     // in webkit, sliding a range element may trigger a click event with a different target if the mouse is released outside the element bounding box.
     // So we check the hovered element instead, and if it is a range input, we skip click handling
-    const element = this._recorder.deepEventTarget(event);
+    const element = this._clickTarget(event);
     if (isRangeInput(element))
       return;
     // Right clicks are handled by 'contextmenu' event if its auxclick
@@ -981,6 +996,23 @@ class JsonRecordActionTool implements RecorderTool {
       modifiers: modifiersForEvent(event),
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
     });
+  }
+
+  // Resolve which element a click should be attributed to. Normally this is the
+  // click event's own target, but some widgets (e.g. bootstrap-touchspin) trigger
+  // an async re-render / full-screen loading overlay on mousedown. With the
+  // pointer held still, the overlay then captures mouseup, so the browser fires
+  // the trusted click on the nearest common ancestor of mousedown and mouseup -
+  // frequently <body>. In that case the click target is a strict ancestor of the
+  // element actually pressed; prefer the press target so we record the real
+  // control instead of <body>.
+  private _clickTarget(event: MouseEvent): HTMLElement {
+    const clickTarget = this._recorder.deepEventTarget(event);
+    const pressTarget = this._pressTarget;
+    this._pressTarget = null;
+    if (pressTarget && pressTarget.isConnected && pressTarget !== clickTarget && clickTarget.contains(pressTarget))
+      return pressTarget;
+    return clickTarget;
   }
 
   private _shouldIgnoreMouseEvent(event: MouseEvent): boolean {

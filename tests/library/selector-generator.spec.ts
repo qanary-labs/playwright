@@ -750,4 +750,53 @@ it.describe('selector generator', () => {
       }
     }, [testIdSel, roleSel, textSel, cssSel]);
   });
+
+  it('collects only selectors that resolve to a nested touchspin button', async ({ page }) => {
+    // Several identical cart lines: the "+" button has no cheap unique match, which
+    // forces parent disambiguation - the path that used to leak ancestor-only
+    // selectors (#cart, body, body >> internal:has-text=...) into the suggestions.
+    const line = (index: number) => `
+      <div class="cart-line" data-line="${index}">
+        <p>en savoir plus Profitez de nos offres</p>
+        <div class="qty d-flex align-items-center">
+          <div class="input-group bootstrap-touchspin">
+            <span class="input-group-btn input-group-prepend">
+              <button tabindex="-1" class="btn js-touchspin bootstrap-touchspin-down" type="button">−</button>
+            </span>
+            <input class="input-quantity js-cart-line-product-quantity form-control"
+                   type="number" value="1" name="product-quantity-spin" min="1" max="3">
+            <span class="input-group-btn input-group-append">
+              <button tabindex="-1" class="btn js-touchspin bootstrap-touchspin-up" type="button">+</button>
+            </span>
+          </div>
+        </div>
+      </div>`;
+    await page.setContent(`<div id="cart">${[0, 1, 2].map(line).join('')}</div>`);
+
+    await page.waitForFunction(() => !!(window as any).__injectedScript?.generateSelector);
+
+    const targetSelector = '[data-line="1"] .bootstrap-touchspin-up';
+    const result = await page.$eval(targetSelector, target => {
+      const injected = (window as any).__injectedScript;
+      return injected.generateSelector(target, {
+        multiple: true,
+        testIdAttributeName: 'data-testid',
+        collectSelectors: true,
+      });
+    });
+
+    // Every returned selector must uniquely resolve to that one "+" button.
+    await page.$eval(targetSelector, (el, selectors) => {
+      const injected = (window as any).__injectedScript;
+      for (const sel of selectors) {
+        const parsed = injected.parseSelector(sel);
+        const matches = injected.querySelectorAll(parsed, document);
+        if (!matches.includes(el))
+          throw new Error(`Selector ${sel} did not match the target`);
+        if (matches.length !== 1)
+          throw new Error(`Selector ${sel} matched ${matches.length} elements`);
+      }
+    }, result.selectors);
+  });
+
 });
