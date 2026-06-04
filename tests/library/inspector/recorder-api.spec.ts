@@ -237,6 +237,38 @@ test('should type', async ({ context }) => {
   expect(normalizeCode(fillActions[0].code)).toEqual(`await page.getByRole('textbox').fill('Hello');`);
 });
 
+test('keeps a password field sensitive after an eye-button flips it to text', async ({ context }) => {
+  // A reveal "eye" button toggles the input's type from password to text. Sensitivity
+  // must stick to the element, otherwise fills recorded after the toggle leak the value.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <input id="pwd" type="password" />
+    <button id="eye" onclick="document.getElementById('pwd').type='text'">show</button>`);
+  await page.locator('#pwd').pressSequentially('ab'); // typed while type=password
+  await page.locator('#eye').click(); // flips the field to type=text
+  await page.locator('#pwd').pressSequentially('cd'); // typed while type=text, same element
+
+  const fills = log.action('fill');
+  expect(fills.length).toBeGreaterThanOrEqual(1);
+  // Every recorded fill on the toggled field stays sensitive, including the ones typed
+  // after the field became type=text.
+  for (const f of fills)
+    expect((f.action as any).sensitive).toBe(true);
+});
+
+test('treats autocomplete=current-password as sensitive even when type is text', async ({ context }) => {
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`<input id="pwd" type="text" autocomplete="current-password" />`);
+  await page.locator('#pwd').pressSequentially('secret');
+
+  const fills = log.action('fill');
+  expect(fills.length).toBeGreaterThanOrEqual(1);
+  for (const f of fills)
+    expect((f.action as any).sensitive).toBe(true);
+});
+
 test('should disable recorder', async ({ context }) => {
   const log = await startRecording(context);
   const page = await context.newPage();

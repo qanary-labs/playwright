@@ -456,7 +456,7 @@ class RecordActionTool implements RecorderTool {
         selectors: this._activeModel!.selectors,
         signals: [],
         text: target.isContentEditable ? target.innerText : (target as HTMLInputElement).value,
-        sensitive: (target as HTMLInputElement).type.toLowerCase() === 'password',
+        sensitive: isSensitiveInput(target),
       });
     }
 
@@ -927,7 +927,7 @@ class JsonRecordActionTool implements RecorderTool {
         ariaSnapshot,
         signals: [],
         text: element.isContentEditable ? element.innerText : (element as HTMLInputElement).value,
-        sensitive: (element as HTMLInputElement).type.toLowerCase() === 'password',
+        sensitive: isSensitiveInput(element),
         submitter: submitter,
         formId: formId,
         isInForm: isInForm,
@@ -2178,6 +2178,29 @@ function isRangeInput(node: Node | null): node is HTMLInputElement {
     return false;
   const inputElement = node as HTMLInputElement;
   return inputElement.type.toLowerCase() === 'range';
+}
+
+// Elements observed as type=password at least once. A "reveal" eye-button flips the
+// same input to type=text, which would otherwise make later fills read as non-sensitive.
+const everPasswordInputs = new WeakSet<HTMLInputElement>();
+
+// Whether a fill on this element should be treated as sensitive. Beyond the live
+// type=password check, we remember elements that were ever a password (so the eye-button
+// type toggle does not drop the flag) and honor the autocomplete tokens that mark
+// password / one-time-code fields (which survive a type toggle and also catch reveal
+// widgets that swap in a separate text input).
+function isSensitiveInput(node: Node | null): boolean {
+  if (!node || node.nodeName !== 'INPUT')
+    return false;
+  const input = node as HTMLInputElement;
+  if (input.type.toLowerCase() === 'password') {
+    everPasswordInputs.add(input);
+    return true;
+  }
+  if (everPasswordInputs.has(input))
+    return true;
+  const autocomplete = (input.getAttribute('autocomplete') || '').toLowerCase().trim();
+  return autocomplete === 'current-password' || autocomplete === 'new-password' || autocomplete === 'one-time-code';
 }
 
 function addEventListener(target: EventTarget, eventName: string, listener: EventListener, useCapture?: boolean): () => void {
