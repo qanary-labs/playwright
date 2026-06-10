@@ -1,153 +1,148 @@
-### Monorepo Packages
+# CLAUDE.md
 
-| Package | npm name | Purpose |
-|---------|----------|---------|
-| `playwright-core` | `playwright-core` | Browser automation engine: client, server, dispatchers, protocol |
-| `playwright` | `playwright` | Test runner + browser automation (public package) |
-| `playwright-test` | `@playwright/test` | Test runner entry point |
-| `playwright-client` | `@playwright/client` | Standalone client package |
-| `protocol` | *(internal)* | RPC protocol definitions (`protocol.yml` → generated `channels.d.ts`) |
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository and behavioral guidelines to reduce common LLM coding mistakes.
 
-### Browser Packages
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-`playwright-chromium`, `playwright-firefox`, `playwright-webkit` — per-browser distributions.
-`playwright-browser-chromium`, `playwright-browser-firefox`, `playwright-browser-webkit` — binary packages.
+## 1. Think Before Coding
 
-### Tooling Packages
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-| Package | Purpose |
-|---------|---------|
-| `html-reporter` | HTML test report viewer |
-| `trace-viewer` | Trace viewer UI |
-| `recorder` | Test recorder |
-| `web` | Shared web UI components |
-| `injected` | Scripts injected into browser pages |
+Before implementing:
 
-### Component Testing
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-`playwright-ct-core`, `playwright-ct-react`, `playwright-ct-vue`
+## 2. Simplicity First
 
-### Key Directories
+**Minimum code that solves the problem. Nothing speculative.**
 
-| Directory | Purpose |
-|-----------|---------|
-| `tests/` | All test suites (page, library, playwright-test, mcp, components, etc.) |
-| `docs/src/` | API documentation — **source of truth** for public TypeScript types |
-| `docs/src/api/` | Per-class API reference (`class-page.md`, `class-locator.md`, etc.) |
-| `utils/` | Build scripts, code generation, linting, doc tools |
-| `browser_patches/` | Browser engine patches |
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
 
-## Build
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-```bash
-npm run build       # Full build
-npm run watch       # Watch mode (recommended during development)
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+```markdown
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
-Assume watch is running and code is up to date. Generated files (types, channels, validators) are produced by watch automatically.
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## Lint and type check
+## 5. Match the Testing Bar
 
-```bash
-npm run flint
+**If a package already has tests, your changes need tests too.**
+
+Playwright requires a test for almost any new or modified functionality (per `CONTRIBUTING.md`). Recorder changes belong in the existing suites under `tests/library/` (see below). New behavior → add a test for it. Changed behavior → update the assertions or add new ones that lock in the new behavior. Bug fix → add a test that would have caught the bug.
+
+Tests must lock in behavior, not just execute lines. An assertion like "doesn't throw", a mock that observes nothing, or a check that mirrors the implementation is coverage theater — strengthen it or delete it.
+
+Tests must be hermetic (no external services) and pass on macOS/Linux/Windows.
+
+Exceptions: trivial renames, comment-only changes, generated code edits.
+
+---
+
+## Project
+
+Qanary Labs' fork of Playwright (forked at upstream v1.58.0, last upstream commit `961381ec7`). All fork work customizes the **codegen recorder**: it turns the CLI-only recorder into a dual-mode system with a programmatic, event-based API ("api" recorder mode) and a JSON Lines codegen output. When working on "the recorder" or "the json recorder", this is the feature set in question. See `CUSTOM.md` for packaging notes.
+
+## Common Commands
+
+| Task | Command |
+| --- | --- |
+| Install (npm workspaces, `packages/*`) | `npm ci` |
+| Build in watch mode (recommended during dev) | `npm run watch` |
+| One-shot build | `npm run build` |
+| Download browsers (needed once) | `npx playwright install` |
+| Full lint (eslint + tsc + doclint + codegen checks) | `npm run lint` |
+| ESLint only (faster) | `npm run eslint` |
+| Type-check only | `npm run tsc` |
+| Library tests, Chromium only (fast path) | `npm run ctest` |
+| Library tests, all three browsers | `npm run test` |
+| Test-runner tests | `npm run ttest` |
+| Single test file | `npm run ctest -- tests/library/inspector/recorder-api.spec.ts` |
+| Filter tests by title | `npm run ctest -- -g "title substring"` |
+
+Recorder-related test suites:
+
+- `tests/library/inspector/recorder-api.spec.ts` — programmatic recorder / RecorderActionPayload (the fork's main suite)
+- `tests/library/inspector/cli-codegen-*.spec.ts` — codegen behavior per language
+- `tests/library/selector-generator.spec.ts` — selector generation incl. fork's multi-selector support
+
+## Generated Files — Edit the Source, Not the Output
+
+Several files are build outputs; the watch process will overwrite manual edits:
+
+- `packages/playwright-core/src/generated/*Source.ts` (e.g. `injectedScriptSource.ts`, `pollingRecorderSource.ts`) are bundled from `packages/injected/src/`. After editing injected code, rebuild via `npm run build`/`watch` (or `node utils/generate_injected.js`).
+- `packages/protocol/src/channels.d.ts` and protocol validators are generated from `packages/protocol/src/protocol.yml` via `node utils/generate_channels.js`.
+- `packages/playwright-core/types/types.d.ts` is generated from `docs/src` API markdown via `node utils/generate_types/`. To change public API types (e.g. `RecorderActionPayload`), edit the corresponding `docs/src/api/class-*.md` file.
+
+## Recorder Architecture (Fork Focus)
+
+Data flow of one recorded action:
+
+```text
+DOM event in the page
+  → injected recorder (packages/injected/src/recorder/recorder.ts)
+      captures the event, retargets to the interactive element, generates
+      selector(s) via packages/injected/src/selectorGenerator.ts, attaches
+      fork metadata (sensitive, cookieBanner, positionRatio, form info…)
+  → server recorder (packages/playwright-core/src/server/recorder.ts
+      + src/server/recorder/* for signals, merging, replay)
+      emits ActionAdded; codegen renders it per language
+      (packages/playwright-core/src/server/codegen/, incl. fork's jsonl.ts)
+  → client (packages/playwright-core/src/client/browserContext.ts)
+      _simplifyRecordedAction() flattens it into a RecorderActionPayload and
+      emits a 'recorderaction' event on BrowserContext/Page
 ```
 
-Runs all lint checks in parallel: eslint, tsc, doclint, check-deps, generate_channels, generate_types, lint-tests, test-types, lint-packages, code-snippet linting.
+So one recorder behavior change usually touches up to four layers: injected (`packages/injected/src/recorder/`), action types (`packages/recorder/src/actions.d.ts`), server codegen (`packages/playwright-core/src/server/codegen/jsonl.ts` for the JSON output), and the client payload mapping in `browserContext.ts` plus its public type in `docs/src/api/` markdown.
 
-**Always run `flint` before committing.** Do not use `tsc --noEmit` or individual lint commands separately.
+### Fork-Specific Pieces
 
-## Test Commands
+- **Programmatic recorder ("api" mode)**: `_enableRecorder({ recorderMode: 'api', ... })` in the protocol (`packages/protocol/src/protocol.yml`); the client wires events instead of writing files. Entry points and payload assembly live in `packages/playwright-core/src/client/browserContext.ts`.
+- **JSONL codegen**: `packages/playwright-core/src/server/codegen/jsonl.ts`, registered in `codegen/languages.ts` under language id `jsonl`. One JSON object per action (selector, ranked `selectors[]`, form info, `cookieBanner`, `positionRatio`, frame selectors, locator).
+- **Multi-selectors**: `generateSelector()` in `packages/injected/src/selectorGenerator.ts` can collect a ranked list of alternative selectors (`collectSelectors` option), surfaced as `selectors[]` in payloads.
+- **Injected-side detectors** (all in `packages/injected/src/recorder/recorder.ts`): sensitive-input detection (input `type` and `autocomplete` values), cookie-banner detection (ancestor attribute named by `window.__pwCookieBannerAttribute`), click `positionRatio` (click position normalized to the element's box, for replay tolerance), label/overlay click attribution quirks.
 
-| Command | Scope |
-|---------|-------|
-| `npm run ctest <filter>` | Chromium only library tests — **use during development** |
-| `npm run test <filter> -- --project=<chromium,firefix,webkit>` | All library / per project |
-| `npm run ttest <filter>` | Test runner (`tests/playwright-test/`) |
-| `npm run ctest-mcp <filter>` | Chromium only MCP tools (`tests/mcp/`) |
-| `npm run test-mcp <filter> -- --project=<chromium,firefox,webkit>` | MCP tools (`tests/mcp/`) |
+## Conventions
 
-
-### Filtering
-
-```bash
-npm run ctest tests/page/locator-click.spec.ts         # Specific file
-npm run ctest tests/page/locator-click.spec.ts:12      # Specific location
-npm run ctest -- --grep "should click"                 # By test name
-npm run ctest-mcp snapshot                             # By file name part
-```
-
-### Test Directories and Fixtures
-
-| Directory | Import | Key Fixtures | What to Test |
-|-----------|--------|--------------|--------------|
-| `tests/page/` | `import { test, expect } from './pageTest'` | `page`, `server`, `browserName` | User interactions: click, fill, navigate, locators, assertions |
-| `tests/library/` | `import { browserTest, expect } from '../config/browserTest'` | `browser`, `context`, `browserType` | Browser/context lifecycle, cookies, permissions, browser-specific features |
-| `tests/playwright-test/` | `import { test, expect } from './playwright-test-fixtures'` | test runner fixtures | Test runner: reporters, config, annotations, retries |
-| `tests/mcp/` | `import { test, expect } from './fixtures'` | `client`, `server` | MCP tools via `client.callTool()` |
-
-**Decision rule**: Does the test need `browser`/`browserType`/`context` → `tests/library/`. Just needs `page` + `server` → `tests/page/`.
-
-## DEPS System
-
-Import boundaries are enforced via `DEPS.list` files (52+ across the repo), checked by `npm run flint`.
-
-**Key rule**: Client code NEVER imports server code. Server code NEVER imports client code. Communication is only through the protocol.
-When creating or moving files, update the relevant `DEPS.list` to declare allowed imports. Files marked `"strict"` can only import what is explicitly listed.
-
-## Coding Convention
-
-For exported classes:
-- `private _method()` — only used within the class itself
-- `_method()` (no `private`) — used by other code in the same file, but not outside the file
-- `method()` (public) — used in other files
-
-Non-exported classes have no naming convention; they are internal implementation details.
-
-## Commit Convention
-
-Before committing, run `npm run flint` and fix errors.
-
-Semantic commit messages: `label(scope): description`
-
-Labels: `fix`, `feat`, `chore`, `docs`, `test`, `devops`
-
-```bash
-git checkout -b fix-39562
-# ... make changes ...
-git add <changed-files>
-git commit -m "$(cat <<'EOF'
-fix(proxy): handle SOCKS proxy authentication
-
-Fixes: https://github.com/microsoft/playwright/issues/39562
-EOF
-)"
-# **Never `git push` without an explicit instruction to push.**
-git push origin fix-39562
-gh pr create --repo microsoft/playwright --head username:fix-39562 \
-  --title "fix(proxy): handle SOCKS proxy authentication" \
-  --body "$(cat <<'EOF'
-## Summary
-- <describe the change very! briefly>
-
-Fixes https://github.com/microsoft/playwright/issues/39562
-EOF
-)"
-```
-
-Never add Co-Authored-By agents in commit message.
-Never add "Generated with" in commit message.
-Never add test plan to PR description. Keep PR description short — a few bullet points at most.
-Branch naming for issue fixes: `fix-<issue-number>`
-
-**Never amend commits.** Always create a new commit for follow-up changes, even when iterating on an open PR. Amending rewrites history and forces a force-push, losing the incremental review trail. Only amend if the user explicitly says so.
-
-**Never `git push` without an explicit instruction to push.** Applies even when a PR is already open for the branch — additional commits are immediately visible to reviewers. Commit locally, report what was committed, and wait. Only push when the user's message contains "push", "upload", "create PR", "ship it", or equivalent.
-
-## Development Guides
-
-Detailed guides for common development tasks:
-
-- **[Architecture: Client, Server, and Dispatchers](.claude/skills/playwright-dev/library.md)** — package layout, protocol layer, ChannelOwner/SdkObject/Dispatcher base classes, DEPS rules, end-to-end RPC flow, object lifecycle
-- **[Adding and Modifying APIs](.claude/skills/playwright-dev/api.md)** — 6-step process: define docs → implement client → define protocol → implement dispatcher → implement server → write tests
-- **[MCP Tools and CLI Commands](.claude/skills/playwright-dev/tools.md)** — `defineTool()`/`defineTabTool()`, tool capabilities, CLI `declareCommand()`, config options, testing with MCP fixtures
-- **[Vendoring Dependencies](.claude/skills/playwright-dev/vendor.md)** — bundle architecture, esbuild setup, typed wrappers, adding deps to existing bundles
+- Commit messages: upstream uses Conventional Commits (`fix(codegen): ...`); fork commits on top of v1.58 use plain descriptive sentences — follow the style of recent fork commits for fork features.
+- Coding style is enforced by `eslint.config.mjs`; comments only where the code can't be made self-explanatory.
