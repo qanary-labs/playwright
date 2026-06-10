@@ -146,3 +146,4 @@ So one recorder behavior change usually touches up to four layers: injected (`pa
 
 - Commit messages: upstream uses Conventional Commits (`fix(codegen): ...`); fork commits on top of v1.58 use plain descriptive sentences — follow the style of recent fork commits for fork features.
 - Coding style is enforced by `eslint.config.mjs`; comments only where the code can't be made self-explanatory.
+- **Upstream upgrades**: whenever an upgrade of this fork to a newer upstream Playwright release is discussed or planned, always write (or update) a spec file in `docs/upgrade/` (e.g. `docs/upgrade/upgrade-to-v1.60.0.md`) covering: current base commit vs target tag, fork commits to carry, conflict map, generated files to regenerate, breaking changes to absorb, and the verification gate. Beware: local fork tags (e.g. `v1.58.0`) may not match upstream's tags — always diff against the upstream base commit.

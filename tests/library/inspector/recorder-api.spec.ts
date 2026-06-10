@@ -355,8 +355,23 @@ test('should emit recorder action for each fill', async ({ context }) => {
   await page.getByRole('textbox').fill('Hello');
   await page.getByRole('textbox').fill('World');
 
-  const fills = events.filter(e => e.action === 'fill');
-  expect(fills).toHaveLength(2);
-  expect(fills.map(e => e.value)).toEqual(['Hello', 'World']);
+  // Recorder events are delivered asynchronously, poll until they arrive.
+  await expect.poll(() => events.filter(e => e.action === 'fill').map(e => e.value)).toEqual(['Hello', 'World']);
+  await recordedContext.close();
+});
+
+test('should emit recorder action for every keystroke while typing', async ({ context }) => {
+  // Consecutive fills on the same element merge into actionUpdated events; each update
+  // must still surface as a recorderaction so consumers can apply last-wins.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, value?: string }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, value?: string }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<input type="text" />`);
+  await page.getByRole('textbox').pressSequentially('Hello');
+
+  // Recorder events are delivered asynchronously, poll until they arrive.
+  await expect.poll(() => events.filter(e => e.action === 'fill').map(e => e.value)).toEqual(['H', 'He', 'Hel', 'Hell', 'Hello']);
   await recordedContext.close();
 });

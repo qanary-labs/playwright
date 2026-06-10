@@ -196,6 +196,11 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       actionAdded: (page: Page, actionInContext: actions.ActionInContext, code: string) => {
         this._emitRecorderAction(page, actionInContext, code);
       },
+      actionUpdated: (page: Page, actionInContext: actions.ActionInContext, code: string) => {
+        // Merged actions (e.g. consecutive fills while typing) arrive as updates carrying
+        // the full cumulative value; surface each one so consumers can apply last-wins.
+        this._emitRecorderAction(page, actionInContext, code);
+      },
     });
   }
 
