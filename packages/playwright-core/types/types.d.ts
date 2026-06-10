@@ -20594,6 +20594,14 @@ export interface RecorderActionPayload {
   cookieBanner: string;
 
   /**
+   * How many times the action occurred in quick succession on the same element. For `'click'` actions this is the click
+   * count: `1` for a single click, `2` for a double click, `3` for a triple click. A repeated action surfaces as
+   * successive payloads with an increasing count for the same element — consumers applying last-wins keep the final
+   * occurrence. Always `1` for actions without repeat semantics.
+   */
+  count: number;
+
+  /**
    * Human-readable representation of the selected value(s). For `'select'` actions, contains the visible labels of the
    * selected options, separated by `", "`.
    */

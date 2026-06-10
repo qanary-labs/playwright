@@ -233,6 +233,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       isInForm: !!action.isInForm,
       displayValue: selectAction?.displayValue || '',
       cookieBanner: action.cookieBanner || '',
+      count: (actionInContext.action as actions.ClickAction).clickCount ?? 1,
     };
     const positionRatio = (actionInContext.action as actions.ClickAction).positionRatio;
     if (positionRatio)

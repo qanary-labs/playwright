@@ -82,6 +82,12 @@ Human-readable representation of the selected value(s). For `'select'` actions, 
 
 Identifier of the cookie/consent banner ancestor of the action target, when the target element (or any of its ancestors, including across open shadow roots) carries the data attribute named in `window.__pwCookieBannerAttribute`. The value is the attribute's value (typically a vendor name like `"onetrust"` or a generic tag set by the consumer). Empty string when no banner ancestor was found or the global is unset.
 
+## property: RecorderActionPayload.count
+* since: v1.58
+- type: <[int]>
+
+How many times the action occurred in quick succession on the same element. For `'click'` actions this is the click count: `1` for a single click, `2` for a double click, `3` for a triple click. A repeated action surfaces as successive payloads with an increasing count for the same element — consumers applying last-wins keep the final occurrence. Always `1` for actions without repeat semantics.
+
 ## property: RecorderActionPayload.positionRatio
 * since: v1.58
 - type: ?<[Object]>

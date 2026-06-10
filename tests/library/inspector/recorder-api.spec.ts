@@ -375,3 +375,31 @@ test('should emit recorder action for every keystroke while typing', async ({ co
   await expect.poll(() => events.filter(e => e.action === 'fill').map(e => e.value)).toEqual(['H', 'He', 'Hel', 'Hell', 'Hello']);
   await recordedContext.close();
 });
+
+test('should report the click count of a double click', async ({ context }) => {
+  // The second click of a double click merges into an update of the first; both surface
+  // as recorderaction payloads, so a last-wins consumer ends up with count 2.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, count: number }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, count: number }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button>Submit</button>`);
+  await page.getByRole('button', { name: 'Submit' }).dblclick();
+
+  await expect.poll(() => events.filter(e => e.action === 'click').map(e => e.count)).toEqual([1, 2]);
+  await recordedContext.close();
+});
+
+test('should report the click count of a triple click', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, count: number }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, count: number }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button>Submit</button>`);
+  await page.getByRole('button', { name: 'Submit' }).click({ clickCount: 3 });
+
+  await expect.poll(() => events.filter(e => e.action === 'click').map(e => e.count)).toEqual([1, 2, 3]);
+  await recordedContext.close();
+});
