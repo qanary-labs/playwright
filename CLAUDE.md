@@ -81,7 +81,7 @@ Exceptions: trivial renames, comment-only changes, generated code edits.
 
 ## Project
 
-Qanary Labs' fork of Playwright (forked at upstream v1.58.0, last upstream commit `961381ec7`). All fork work customizes the **codegen recorder**: it turns the CLI-only recorder into a dual-mode system with a programmatic, event-based API ("api" recorder mode) and a JSON Lines codegen output. When working on "the recorder" or "the json recorder", this is the feature set in question. See `CUSTOM.md` for packaging notes.
+Qanary Labs' fork of Playwright (rebased onto upstream v1.60.0, upstream base commit `87bb9ddbd`). All fork work customizes the **codegen recorder**: it turns the CLI-only recorder into a dual-mode system with a programmatic, event-based API ("api" recorder mode) and a JSON Lines codegen output. When working on "the recorder" or "the json recorder", this is the feature set in question. See `CUSTOM.md` for packaging notes.
 
 ## Common Commands
 
