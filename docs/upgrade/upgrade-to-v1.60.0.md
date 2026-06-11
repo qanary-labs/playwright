@@ -1,7 +1,21 @@
 # Upgrade Spec: Fork v1.58.0 → Upstream v1.60.0
 
-Status: draft — not started
-Date: 2026-06-10
+Status: executed on branch `upgrade/v1.60.0` — verification gate passed, awaiting merge to main
+Date: 2026-06-10 (executed 2026-06-11)
+
+## 0. Execution outcome (2026-06-11)
+
+- Rebased onto `87bb9ddbd` (upstream v1.60.0). 22 fork commits existed at execution time (two more than §3: `dc2eca4f5` "Preparations before 1.60 upgrade" and `e2cced8c4` interaction count); 19 were replayed.
+- The §3-noted trio (`25207780b`/`78d07d396`/`1bcf8249b`) was **skipped** during the rebase: upstream moved `protocol.yml` to `packages/protocol/spec/*.yml` and deleted files the trio touched. ⚠️ Contrary to §3's note, the trio was NOT a pure no-op: `Page.getSelectedText()`, CUSTOM.md and the Qanary package.json branding survived the revert. They were re-implemented as one new commit on the v1.60 layout (`getSelectedText` now defined in `packages/protocol/spec/page.yml` + `packages/isomorphic/protocolMetainfo.ts`).
+- Other notable resolutions:
+  - Fork's `hideOverlay` option replaced by upstream's native `hideToolbar` (overlay still hidden when `collectSelectors` is on).
+  - `generateFrameSelector` merged: upstream's `Progress` plumbing + fork's `{ framePath, frameSelectors }` return.
+  - `packages/playwright/src/mcp/browser/actions.d.ts` (never-imported stale copy of `@recorder/actions`) dropped.
+  - `evaluateHandleInUtility` → `_evaluateHandleInUtility` rename absorbed in the label-click commit.
+  - Upstream v1.60 ships its own `CLAUDE.md`; the fork's version was kept (upstream's retrievable from the `v1.60.0` tag).
+  - Two test-typing fixes for TypeScript 6 inference (`recorder-api.spec.ts`, `selector-generator.spec.ts`).
+- Gate results: build ✓, tsc ✓, eslint ✓, check-deps/lint-tests/lint-packages/test-types ✓; full Chromium library suite 4645 passed / 0 failed; inspector + selector-generator suites green on all three browsers; api-mode smoke test confirmed all payload fields (`selectors[]`, `sensitive`, `cookieBanner`, `positionRatio`, form info, `displayValue`, `count`).
+- ⚠️ Known pre-existing failure (also fails on `main` at v1.58): doclint reports `Documented "RecorderActionPayload" not found in sources`, so the full `npm run lint` chain stops at the doc step. Not a regression; fix separately.
 
 ## 1. Context
 
