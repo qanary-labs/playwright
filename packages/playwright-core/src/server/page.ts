@@ -926,6 +926,12 @@ export class Page extends SdkObject<PageEventMap> {
   async setDockTile(image: Buffer) {
     await this.delegate.setDockTile(image);
   }
+
+  async getSelectedText(): Promise<{text: string }> {
+    return {
+      text: await this.mainFrame().getSelectedText(),
+    };
+  }
 }
 
 export const WorkerEvent = {

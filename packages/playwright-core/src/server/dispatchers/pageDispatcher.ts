@@ -449,6 +449,10 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
     return await progress.race(coverage.stopCSSCoverage());
   }
 
+  async getSelectedText(params: channels.PageGetSelectedTextParams, progress: Progress): Promise<channels.PageGetSelectedTextResult> {
+    return await progress.race(this._page.getSelectedText());
+  }
+
   _onFrameAttached(frame: Frame) {
     this._dispatchEvent('frameAttached', { frame: FrameDispatcher.from(this.parentScope(), frame) });
   }

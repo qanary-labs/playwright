@@ -250,6 +250,7 @@ export const methodMetainfo = new Map<string, MethodMetainfo>([
   ['Response.rawResponseHeaders', { internal: true, }],
   ['Response.httpVersion', { internal: true, }],
   ['Response.sizes', { internal: true, }],
+  ['Page.getSelectedText', { title: 'Get selected text', }],
   ['Page.addInitScript', { title: 'Add init script', group: 'configuration', }],
   ['Page.close', { title: 'Close page', pause: true, }],
   ['Page.clearConsoleMessages', { title: 'Clear console messages', }],

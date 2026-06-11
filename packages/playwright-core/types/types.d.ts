@@ -3187,6 +3187,20 @@ export interface Page {
   }): Locator;
 
   /**
+   * - from Qanary fork
+   *
+   * Get selected text.
+   *
+   * **Usage**
+   *
+   * ```js
+   * await page.getSelectedText();
+   * ```
+   *
+   */
+  getSelectedText(): Promise<string>;
+
+  /**
    * Returns the main resource response. In case of multiple redirects, the navigation will resolve with the response of
    * the last redirect. If cannot go back, returns `null`.
    *

@@ -2293,6 +2293,10 @@ scheme.PageWebSocketEvent = tObject({
 scheme.PageWorkerEvent = tObject({
   worker: tChannel(['Worker']),
 });
+scheme.PageGetSelectedTextParams = tOptional(tObject({}));
+scheme.PageGetSelectedTextResult = tObject({
+  text: tString,
+});
 scheme.PageAddInitScriptParams = tObject({
   source: tString,
 });

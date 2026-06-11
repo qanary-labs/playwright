@@ -4001,6 +4001,7 @@ export interface PageEventTarget {
 }
 export interface PageChannel extends PageEventTarget, EventTargetChannel {
   _type_Page: boolean;
+  getSelectedText(params?: PageGetSelectedTextParams, progress?: Progress): Promise<PageGetSelectedTextResult>;
   addInitScript(params: PageAddInitScriptParams, progress?: Progress): Promise<PageAddInitScriptResult>;
   close(params: PageCloseParams, progress?: Progress): Promise<PageCloseResult>;
   clearConsoleMessages(params?: PageClearConsoleMessagesParams, progress?: Progress): Promise<PageClearConsoleMessagesResult>;
@@ -4099,6 +4100,11 @@ export type PageWebSocketEvent = {
 };
 export type PageWorkerEvent = {
   worker: WorkerChannel,
+};
+export type PageGetSelectedTextParams = {};
+export type PageGetSelectedTextOptions = {};
+export type PageGetSelectedTextResult = {
+  text: string,
 };
 export type PageAddInitScriptParams = {
   source: string,

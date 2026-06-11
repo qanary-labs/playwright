@@ -924,6 +924,35 @@ When all steps combined have not finished during the specified [`option: timeout
 ### option: Page.dblclick.trial = %%-input-trial-with-modifiers-%%
 * since: v1.11
 
+## async method: Page.getSelectedText
+* since: v1.57
+* from Qanary fork
+- returns: <[string]>
+
+Get selected text.
+
+**Usage**
+
+```js
+await page.getSelectedText();
+```
+
+```java
+page.getSelectedText();
+```
+
+```python async
+await page.getSelectedText()
+```
+
+```python sync
+page.getSelectedText()
+```
+
+```csharp
+await page.GetSelectedTextAsync();
+```
+
 ## async method: Page.dispatchEvent
 * since: v1.8
 * discouraged: Use locator-based [`method: Locator.dispatchEvent`] instead. Read more about [locators](../locators.md).

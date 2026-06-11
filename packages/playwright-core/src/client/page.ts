@@ -874,6 +874,10 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   async _setDockTile(image: Buffer) {
     await this._channel.setDockTile({ image });
   }
+
+  async getSelectedText(): Promise<string> {
+    return (await this._channel.getSelectedText()).text;
+  }
 }
 
 export class BindingCall extends ChannelOwner<channels.BindingCallChannel> {

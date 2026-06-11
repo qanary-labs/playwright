@@ -30,6 +30,11 @@ Page:
 
   commands:
 
+    getSelectedText:
+      title: Get selected text
+      returns:
+        text: string
+
     addInitScript:
       title: Add init script
       group: configuration
