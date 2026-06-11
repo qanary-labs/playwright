@@ -730,8 +730,8 @@ it.describe('selector generator', () => {
 
     console.log(result);
     expect(result.selectors.length).toBeGreaterThanOrEqual(4);
-    const selectorSet = new Set(result.selectors);
-    const pick = (needle: RegExp) => [...selectorSet].find((s: string) => needle.test(s))!;
+    const selectorSet = new Set<string>(result.selectors);
+    const pick = (needle: RegExp) => [...selectorSet].find(s => needle.test(s))!;
     const testIdSel = pick(/data-testid/);
     const roleSel = pick(/internal:role=button/);
     const textSel = pick(/Submit order/);

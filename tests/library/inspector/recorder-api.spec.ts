@@ -327,7 +327,7 @@ test('should collect multiple selectors when requested', async ({ context }) => 
   await page.getByRole('button', { name: 'Submit' }).click();
 
   const clickActions = log.action('click');
-  expect(clickActions[0].action.selectors?.length).toBeGreaterThan(1);
+  expect((clickActions[0].action as actions.ActionWithSelector).selectors?.length).toBeGreaterThan(1);
 });
 
 test('should emit recorder action events for recordSelectors option', async ({ context }) => {
