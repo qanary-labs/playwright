@@ -353,6 +353,23 @@ export class Chromium extends BrowserType {
     return chromeArguments;
   }
 
+  override async prepareUserDataDir(options: types.LaunchOptions, userDataDir: string): Promise<void> {
+    // Disable Chrome's built-in "offer to translate" bubble. Neither --disable-features=Translate
+    // nor the TranslateEnabled policy suppress it in current Chrome; seeding the profile pref
+    // translate.enabled=false is the only effective lever. Runs for both launch() and
+    // launchPersistentContext() since both pass through prepareUserDataDir after the profile is created.
+    const prefsPath = path.join(userDataDir, 'Default', 'Preferences');
+    let prefs: { translate?: { enabled?: boolean } } & Record<string, unknown> = {};
+    try {
+      prefs = JSON.parse(await fs.promises.readFile(prefsPath, 'utf8'));
+    } catch {
+      // No existing Preferences (fresh profile) — start from an empty object.
+    }
+    prefs.translate = { ...prefs.translate, enabled: false };
+    await fs.promises.mkdir(path.dirname(prefsPath), { recursive: true });
+    await fs.promises.writeFile(prefsPath, JSON.stringify(prefs));
+  }
+
   private _innerDefaultArgs(options: types.LaunchOptions): string[] {
     const { args = [] } = options;
     const userDataDirArg = args.find(arg => arg.startsWith('--user-data-dir'));
