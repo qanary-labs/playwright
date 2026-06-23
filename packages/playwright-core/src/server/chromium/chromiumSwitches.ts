@@ -26,8 +26,10 @@ const disabledFeatures = [
   // See https://github.com/microsoft/playwright/pull/13854
   'DialMediaRouteProvider',
   'GlobalMediaControls',
-  // See https://github.com/microsoft/playwright/pull/27605
-  'HttpsUpgrades',
+  // FORK: upstream disables 'HttpsUpgrades' (PR #27605), but we keep it at Chromium's default (on).
+  // Some targets perform an https->http downgrade redirect to a host that only serves 443; with the
+  // upgrade off, Chromium follows the http hop literally and fails ("site can't be reached"). Do NOT
+  // re-add 'HttpsUpgrades' here when rebasing onto a newer Playwright base.
   // Hides the Lens feature in the URL address bar. Its not working in unofficial builds.
   'LensOverlay',
   // See https://github.com/microsoft/playwright/pull/8162
