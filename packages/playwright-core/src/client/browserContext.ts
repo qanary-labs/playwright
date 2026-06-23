@@ -267,6 +267,8 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
 
   private _actionValue(action: actions.Action): string | undefined {
     switch (action.name) {
+      case 'click':
+        return this._clickValue(action as actions.ClickAction);
       case 'fill':
         return (action as actions.FillAction).text;
       case 'press':
@@ -299,6 +301,22 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       parts.push('Meta');
 
     parts.push(action.key);
+    return parts.join('+');
+  }
+
+  private _clickValue(action: actions.ClickAction): string {
+    const modifiers = action.modifiers ?? 0;
+    const parts: string[] = [];
+    if (modifiers & 2)
+      parts.push('Control');
+    if (modifiers & 1)
+      parts.push('Alt');
+    if (modifiers & 8)
+      parts.push('Shift');
+    if (modifiers & 4)
+      parts.push('Meta');
+
+    parts.push(action.button);
     return parts.join('+');
   }
 

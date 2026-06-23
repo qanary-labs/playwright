@@ -40,6 +40,8 @@ Element text captured at the moment of the action, if any.
 
 Value recorded for value-carrying actions. For example, the text passed to `locator.fill()` or the list of files passed to `setInputFiles()`.
 
+For `'click'` actions, this encodes the mouse button together with any held modifier keys as a `'+'`-separated string, with the button always last: for example `'left'`, `'right'`, `'Control+left'`, or `'Control+Shift+middle'`. The leading tokens (`'Control'`, `'Alt'`, `'Shift'`, `'Meta'`) and trailing button (`'left'`, `'middle'`, `'right'`) map directly onto the `modifiers` and `button` options of `locator.click()`.
+
 ## property: RecorderActionPayload.sensitive
 * since: v1.57
 - type: <[boolean]>

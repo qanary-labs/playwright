@@ -461,3 +461,26 @@ test('should still record a synthetic click echo when the trusted click was supp
   await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
   await recordedContext.close();
 });
+
+test('should encode the mouse button and modifiers in the click value', async ({ context }) => {
+  // The click value packs held modifiers and the mouse button as a '+'-separated
+  // string with the button last, so a consumer can replay it straight back into
+  // locator.click({ modifiers, button }).
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, value?: string }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, value?: string }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  // Use distinct targets so the clicks do not merge into last-wins updates of a single action.
+  await page.setContent(`<button>One</button><button>Two</button><button>Three</button><button>Four</button>`);
+  await page.getByRole('button', { name: 'One' }).click();
+  await page.getByRole('button', { name: 'Two' }).click({ button: 'right' });
+  await page.getByRole('button', { name: 'Three' }).click({ button: 'middle' });
+  // Avoid Control here: on macOS Control+click is the OS secondary click and would be
+  // recorded as a right button. Alt+Shift exercises modifier encoding on all platforms.
+  await page.getByRole('button', { name: 'Four' }).click({ modifiers: ['Alt', 'Shift'] });
+
+  await expect.poll(() => events.filter(e => e.action === 'click').map(e => e.value))
+      .toEqual(['left', 'right', 'middle', 'Alt+Shift+left']);
+  await recordedContext.close();
+});
