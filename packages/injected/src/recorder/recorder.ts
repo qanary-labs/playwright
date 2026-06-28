@@ -1578,6 +1578,10 @@ export class Recorder {
   // intercept, beacon, and re-fire via element.click()). See _onClick().
   private _lastTrustedClickAt = 0;
   private _lastTrustedClickPath: EventTarget[] = [];
+  // Set once the trusted click for the current anchor has been recorded, so a
+  // later synthetic re-dispatch is treated as a duplicate rather than an echo to
+  // accept. Reset whenever a new trusted pointerup/mouseup sets the anchor.
+  private _lastTrustedClickRecorded = false;
   readonly highlight: Highlight;
   readonly overlay: Overlay | undefined;
   private _stylesheet: CSSStyleSheet;
@@ -1766,10 +1770,19 @@ export class Recorder {
       return;
     if (this._ignoreOverlayEvent(event))
       return;
+    // Document-level capture means we usually see the trusted click before any
+    // element-level interceptor can suppress it. Once recorded, mark the anchor
+    // consumed so a later synthetic re-dispatch is rejected as a duplicate.
+    if (event.isTrusted)
+      this._lastTrustedClickRecorded = true;
     this._currentTool.onClick?.(event);
   }
 
   private _isSyntheticClickEcho(event: MouseEvent): boolean {
+    // The trusted click was already recorded, so this synthetic re-dispatch is a
+    // duplicate, not a substitute for a suppressed click.
+    if (this._lastTrustedClickRecorded)
+      return false;
     const ECHO_WINDOW_MS = 2000;
     const dt = this.injectedScript.utils.builtins.Date.now() - this._lastTrustedClickAt;
     if (dt > ECHO_WINDOW_MS)
@@ -1835,6 +1848,7 @@ export class Recorder {
       // synthetically after async work, while leaving pointer events alone.
       this._lastTrustedClickAt = this.injectedScript.utils.builtins.Date.now();
       this._lastTrustedClickPath = event.composedPath();
+      this._lastTrustedClickRecorded = false;
     }
     if (!event.isTrusted)
       return;
@@ -1857,6 +1871,7 @@ export class Recorder {
       // environment. _onPointerUp normally wins because it fires first.
       this._lastTrustedClickAt = this.injectedScript.utils.builtins.Date.now();
       this._lastTrustedClickPath = event.composedPath();
+      this._lastTrustedClickRecorded = false;
     }
     if (!event.isTrusted)
       return;

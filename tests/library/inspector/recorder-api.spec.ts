@@ -403,3 +403,61 @@ test('should report the click count of a triple click', async ({ context }) => {
   await expect.poll(() => events.filter(e => e.action === 'click').map(e => e.count)).toEqual([1, 2, 3]);
   await recordedContext.close();
 });
+
+test('should not duplicate a recorded click when the page re-fires it synthetically', async ({ context }) => {
+  // An element-level interceptor re-fires the click via element.click() without
+  // suppressing the original. The recorder sees the trusted click first (it
+  // listens at document capture), records it, then must reject the synthetic
+  // echo as a duplicate rather than recording a second click.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <button id="accept">Accept</button>
+    <script>
+      const b = document.getElementById('accept');
+      b.addEventListener('click', e => {
+        if (e.isTrusted)
+          setTimeout(() => b.click(), 50);
+      });
+    </script>
+  `);
+  await page.getByRole('button', { name: 'Accept' }).click();
+
+  // Wait past the 2s echo window, then assert only one click was recorded.
+  await page.waitForTimeout(2100);
+  expect(events.filter(e => e.action === 'click')).toHaveLength(1);
+  await recordedContext.close();
+});
+
+test('should still record a synthetic click echo when the trusted click was suppressed', async ({ context }) => {
+  // A document-level interceptor suppresses the trusted click before it reaches
+  // the recorder, then re-fires it synthetically (the cookie-consent pattern the
+  // echo tolerance was built for). With no trusted click recorded, the echo must
+  // still be accepted so the action is not lost — exactly one click recorded.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string }) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <button id="accept">Accept</button>
+    <script>
+      const b = document.getElementById('accept');
+      let refired = false;
+      document.addEventListener('click', e => {
+        if (e.isTrusted && !refired) {
+          refired = true;
+          e.stopImmediatePropagation();
+          setTimeout(() => b.click(), 50);
+        }
+      }, true);
+    </script>
+  `);
+  await page.getByRole('button', { name: 'Accept' }).click();
+
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+  await recordedContext.close();
+});
