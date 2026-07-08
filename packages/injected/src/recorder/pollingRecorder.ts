@@ -29,6 +29,12 @@ interface Embedder {
   __pw_recorderSetMode(mode: Mode): Promise<void>;
   __pw_recorderSetOverlayState(state: OverlayState): Promise<void>;
   __pw_refreshOverlay(): void;
+  // Set by PollingRecorder (like __pw_refreshOverlay) for the embedder to call:
+  // records any pending inferred hover steps whose revealed content is still
+  // showing — used before assertions, which bypass the recorder.
+  __pw_recorderFlushInferredHovers(): Promise<void>;
+  // Diagnostic: JSON-safe snapshot of the hover inference engine state.
+  __pw_recorderHoverDebug(): unknown;
 }
 
 export class PollingRecorder implements RecorderDelegate {
@@ -48,6 +54,8 @@ export class PollingRecorder implements RecorderDelegate {
       this._pollRecorderMode().catch(e => console.log(e)); // eslint-disable-line no-console
     };
     this._embedder.__pw_refreshOverlay = refreshOverlay;
+    this._embedder.__pw_recorderFlushInferredHovers = () => this._recorder.flushInferredHovers();
+    this._embedder.__pw_recorderHoverDebug = () => this._recorder.hoverInferenceDebugState();
     refreshOverlay();
   }
 

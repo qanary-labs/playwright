@@ -90,6 +90,12 @@ Identifier of the cookie/consent banner ancestor of the action target, when the 
 
 How many times the action occurred in quick succession on the same element. For `'click'` actions this is the click count: `1` for a single click, `2` for a double click, `3` for a triple click. A repeated action surfaces as successive payloads with an increasing count for the same element — consumers applying last-wins keep the final occurrence. Always `1` for actions without repeat semantics.
 
+## property: RecorderActionPayload.inferred
+* since: v1.60
+- type: ?<[boolean]>
+
+Present and `true` on `'hover'` actions produced by the hover inference engine: the hover was not an explicit recording gesture but was recorded retroactively because the next committed action targeted content the hover revealed (dropdown menu, tooltip, row actions). Consumers may render such steps distinctly and should replay them as optional — a stale inferred hover must not fail the run. Absent otherwise.
+
 ## property: RecorderActionPayload.positionRatio
 * since: v1.58
 - type: ?<[Object]>

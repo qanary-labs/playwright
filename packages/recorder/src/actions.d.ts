@@ -67,6 +67,10 @@ export type ClickAction = ActionWithSelector & {
 export type HoverAction = ActionWithSelector & {
   name: 'hover',
   position?: Point,
+  // Produced by the hover inference engine (recorded retroactively when a
+  // committed action depended on content this hover revealed), as opposed to
+  // a hover the user deliberately recorded.
+  inferred?: boolean,
 };
 
 export type CheckAction = ActionWithSelector & {

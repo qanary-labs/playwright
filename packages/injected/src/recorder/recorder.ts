@@ -17,6 +17,7 @@
 // This is the only dependency this file is allowed to have, because we are fine with a dupe.
 // See DEPS.list for more details.
 import clipPaths from './clipPaths';
+import { HoverInferenceEngine } from './hoverInference';
 
 import type { Point } from '@isomorphic/types';
 import type { AriaSnapshot } from '../ariaSnapshot';
@@ -64,6 +65,10 @@ interface RecorderTool {
   onMouseLeave?(event: MouseEvent): void;
   onFocus?(event: Event): void;
   onScroll?(event: Event): void;
+  // Emits any pending inferred hover steps (see HoverInferenceEngine) — called
+  // by the embedder before an out-of-recorder confirmation such as an assertion.
+  flushInferredHovers?(): Promise<void>;
+  hoverInferenceDebugState?(): unknown;
 }
 
 class NoneTool implements RecorderTool {
@@ -785,18 +790,78 @@ class JsonRecordActionTool implements RecorderTool {
   // any click handler runs so we can recover the real target when an overlay or
   // re-render shifts the click event's target after mousedown (see onClick).
   private _pressTarget: HTMLElement | null = null;
+  private _hoverInference: HoverInferenceEngine;
 
   constructor(recorder: Recorder) {
     this._recorder = recorder;
+    this._hoverInference = new HoverInferenceEngine(recorder);
   }
 
   install() {
     // No highlight for the lightweight recorder.
     this._recorder.highlight.uninstall();
+    this._hoverInference.install();
+    // The hover engine gets its own pointer feed instead of relying solely on
+    // the recorder's document-level mousemove dispatch. Consent blockers
+    // (CookieYes) capture mousemove on window pre-consent,
+    // stopImmediatePropagation it and re-dispatch synthetic (untrusted)
+    // copies: the page's menus still open (jQuery ignores isTrusted) while no
+    // later-registered listener ever sees a trusted move — and the recorder
+    // injects AFTER page scripts (extendInjectedScript evaluates on navigated
+    // frames), so it always registers later. Redundant feeds defeat this:
+    // pointermove and pointerrawupdate are separate event streams that
+    // mousemove blockers leave alone (onPointerMove is idempotent for the
+    // duplicate deliveries of one physical move).
+    const window = this._recorder.injectedScript.window;
+    for (const type of ['mousemove', 'pointermove', 'pointerrawupdate'])
+      window.addEventListener(type, this._onPointerFeed as EventListener, true);
   }
 
   uninstall() {
     this._recorder.highlight.install();
+    this._hoverInference.uninstall();
+    const window = this._recorder.injectedScript.window;
+    for (const type of ['mousemove', 'pointermove', 'pointerrawupdate'])
+      window.removeEventListener(type, this._onPointerFeed as EventListener, true);
+  }
+
+  private _onPointerFeed = (event: MouseEvent) => {
+    if (!event.isTrusted)
+      return;
+    this._hoverInference.onPointerMove(event, this._recorder.deepEventTarget(event));
+  };
+
+  // Kept although the listeners above usually see every trusted move first:
+  // onPointerMove is idempotent for a repeated (event, target) pair.
+  onMouseMove(event: MouseEvent) {
+    this._hoverInference.onPointerMove(event, this._recorder.deepEventTarget(event));
+  }
+
+  onScroll(event: Event) {
+    this._hoverInference.onScroll();
+  }
+
+  async flushInferredHovers() {
+    for (const hover of this._hoverInference.flushVisibleHovers())
+      await this._recorder.recordAction(hover);
+  }
+
+  hoverInferenceDebugState(): unknown {
+    return this._hoverInference.debugState();
+  }
+
+  // Records the action, preceded by the inferred hover steps it confirms —
+  // a hover matters exactly when the next committed action targets content it
+  // revealed, and replay needs those hovers re-performed in order first.
+  // All recordAction calls MUST be dispatched synchronously in the same task:
+  // channel order already guarantees hovers arrive before the action, while
+  // awaiting between them lets the action's own side effects (e.g. a fragment
+  // navigation from the click) reach the server first and be recorded as a
+  // standalone navigate instead of a signal on the action.
+  private _recordConfirmedAction(action: actions.Action, target: Element) {
+    for (const hover of this._hoverInference.confirmedHoversFor(target))
+      void this._recorder.recordAction(hover);
+    void this._recorder.recordAction(action);
   }
 
   onPointerDown(event: PointerEvent) {
@@ -834,7 +899,7 @@ class JsonRecordActionTool implements RecorderTool {
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (checkbox && event.detail === 1) {
       // Interestingly, inputElement.checked is reversed inside this event handler.
-      void this._recorder.recordAction({
+      this._recordConfirmedAction({
         name: checkbox.checked ? 'check' : 'uncheck',
         selector,
         selectors,
@@ -845,11 +910,11 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-      });
+      }, element);
       return;
     }
 
-    void this._recorder.recordAction({
+    this._recordConfirmedAction({
       name: 'click',
       selector,
       selectors,
@@ -865,14 +930,14 @@ class JsonRecordActionTool implements RecorderTool {
       formId: formId,
       isInForm: isInForm,
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-    });
+    }, element);
   }
 
   onContextMenu(event: MouseEvent): void {
     const element = this._recorder.deepEventTarget(event);
     const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
-    void this._recorder.recordAction({
+    this._recordConfirmedAction({
       name: 'click',
       selector,
       selectors,
@@ -888,7 +953,7 @@ class JsonRecordActionTool implements RecorderTool {
       formId: formId,
       isInForm: isInForm,
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-    });
+    }, element);
   }
 
   onInput(event: Event) {
@@ -896,7 +961,7 @@ class JsonRecordActionTool implements RecorderTool {
     const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (isRangeInput(element)) {
-      void this._recorder.recordAction({
+      this._recordConfirmedAction({
         name: 'fill',
         selector,
         selectors,
@@ -909,7 +974,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-      });
+      }, element);
       return;
     }
 
@@ -919,7 +984,7 @@ class JsonRecordActionTool implements RecorderTool {
         return;
       }
 
-      void this._recorder.recordAction({
+      this._recordConfirmedAction({
         name: 'fill',
         ref,
         selector,
@@ -932,13 +997,13 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-      });
+      }, element);
       return;
     }
 
     if (element.nodeName === 'SELECT') {
       const selectElement = element as HTMLSelectElement;
-      void this._recorder.recordAction({
+      this._recordConfirmedAction({
         name: 'select',
         selector,
         selectors,
@@ -951,7 +1016,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-      });
+      }, element);
       return;
     }
   }
@@ -968,7 +1033,7 @@ class JsonRecordActionTool implements RecorderTool {
     if (event.key === ' ') {
       const checkbox = asCheckbox(element);
       if (checkbox && event.detail === 0) {
-        void this._recorder.recordAction({
+        this._recordConfirmedAction({
           name: checkbox.checked ? 'uncheck' : 'check',
           selector,
           selectors,
@@ -979,12 +1044,12 @@ class JsonRecordActionTool implements RecorderTool {
           formId: formId,
           isInForm: isInForm,
           cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-        });
+        }, element);
         return;
       }
     }
 
-    void this._recorder.recordAction({
+    this._recordConfirmedAction({
       name: 'press',
       selector,
       selectors,
@@ -997,7 +1062,7 @@ class JsonRecordActionTool implements RecorderTool {
       key: event.key,
       modifiers: modifiersForEvent(event),
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-    });
+    }, element);
   }
 
   // Resolve which element a click should be attributed to. Normally this is the
@@ -2013,6 +2078,14 @@ export class Recorder {
   elementPicked(selector: string, model: HighlightModel) {
     const ariaSnapshot = this.injectedScript.ariaSnapshot(model.elements[0], { mode: 'default' });
     void this._delegate.elementPicked?.({ selector, ariaSnapshot });
+  }
+
+  async flushInferredHovers() {
+    await this._currentTool.flushInferredHovers?.();
+  }
+
+  hoverInferenceDebugState(): unknown {
+    return this._currentTool.hoverInferenceDebugState?.();
   }
 }
 

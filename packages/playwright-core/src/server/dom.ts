@@ -115,6 +115,11 @@ export class FrameExecutionContext extends js.ExecutionContext {
   }
 }
 
+// Hover re-entry (see _hover): start just outside the target's edge and walk to the
+// hover point in small steps, generating the move stream that travel-gated menus require.
+const kHoverApproachOffset = 12;
+const kHoverApproachSteps = 8;
+
 export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   __elementhandle: T = true as any;
   declare readonly _context: FrameExecutionContext;
@@ -534,7 +539,33 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   _hover(progress: Progress, options: types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
-    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, (progress, point) => this._page.mouse.move(progress, point.x, point.y), { ...options, waitAfter: 'disabled' });
+    return this._retryPointerAction(progress, 'hover', false /* waitForEnabled */, async (progress, point) => {
+      await this._page.mouse.move(progress, point.x, point.y);
+      // "Real mouse" detectors ignore a single teleport mousemove: SmartMenus
+      // (WordPress/Elementor navs) only opens hover submenus after two consecutive
+      // mousemoves ≤2px apart within 300ms — a stream only physical mice produce.
+      // Nudge the pointer one pixel out and back so hover-revealed menus open for
+      // a replayed hover exactly like they did for the live user.
+      await this._page.mouse.move(progress, point.x + 1, point.y + 1);
+      await this._page.mouse.move(progress, point.x, point.y);
+      // Travel-based intent detectors are stricter still: they ignore both the
+      // teleport and the nudge, opening only when the pointer enters the element
+      // across its boundary while producing sustained movement. Re-enter the hover
+      // point: jump just outside the element's nearest vertical edge, then walk
+      // back in small steps. The short excursion stays within an open menu panel
+      // when hovers chain, so already-revealed menus survive it.
+      const box = await this.boundingBox(progress);
+      if (!box)
+        return;
+      const viewportHeight = this._page.emulatedSize()?.viewport.height ?? Infinity;
+      const belowY = box.y + box.height + kHoverApproachOffset;
+      const aboveY = box.y - kHoverApproachOffset;
+      const fromY = belowY < viewportHeight ? belowY : aboveY >= 0 ? aboveY : undefined;
+      if (fromY === undefined)
+        return;
+      await this._page.mouse.move(progress, point.x, fromY);
+      await this._page.mouse.move(progress, point.x, point.y, { steps: kHoverApproachSteps });
+    }, { ...options, waitAfter: 'disabled' });
   }
 
   async click(progress: Progress, options: { noWaitAfter?: boolean } & types.MouseClickOptions & types.PointerActionWaitOptions): Promise<void> {

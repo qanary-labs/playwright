@@ -20635,6 +20635,14 @@ export interface RecorderActionPayload {
   frameSelectors: Array<Array<string>>;
 
   /**
+   * Present and `true` on `'hover'` actions produced by the hover inference engine: the hover was not an explicit
+   * recording gesture but was recorded retroactively because the next committed action targeted content the hover
+   * revealed (dropdown menu, tooltip, row actions). Consumers may render such steps distinctly and should replay them
+   * as optional — a stale inferred hover must not fail the run. Absent otherwise.
+   */
+  inferred?: boolean;
+
+  /**
    * Whether the component targeted by locator is inside a form.
    */
   isInForm: boolean;
