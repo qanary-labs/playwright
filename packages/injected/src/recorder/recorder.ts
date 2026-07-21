@@ -472,6 +472,7 @@ class RecordActionTool implements RecorderTool {
         selector: this._activeModel!.selector,
         selectors: this._activeModel!.selectors,
         options: [...selectElement.selectedOptions].map(option => option.value),
+        displayValue: [...selectElement.selectedOptions].map(option => option.label || option.text).join(', '),
         signals: [],
       });
     }
