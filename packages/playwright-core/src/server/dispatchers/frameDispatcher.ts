@@ -139,6 +139,10 @@ export class FrameDispatcher extends Dispatcher<Frame, channels.FrameChannel, Br
     return await this._frame.ariaSnapshot(progress, params);
   }
 
+  async generateSelectors(params: channels.FrameGenerateSelectorsParams, progress: Progress): Promise<channels.FrameGenerateSelectorsResult> {
+    return await this._frame.generateSelectors(progress, params.selector);
+  }
+
   async click(params: channels.FrameClickParams, progress: Progress): Promise<void> {
     progress.metadata.potentiallyClosesScope = true;
     return await this._frame.click(progress, params.selector, params);

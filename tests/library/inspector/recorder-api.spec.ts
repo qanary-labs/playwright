@@ -484,3 +484,63 @@ test('should encode the mouse button and modifiers in the click value', async ({
       .toEqual(['left', 'right', 'middle', 'Alt+Shift+left']);
   await recordedContext.close();
 });
+
+test('generateSelectors matches what recording the same element emits', async ({ context }) => {
+  // Relocate-mode parity contract (zazu's relocate-mode spec): on-demand generation and
+  // capture-time generation are the same feature — same engine, same options — so for the
+  // same element they must return identical ranked lists.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, selector: string, selectors: string[], frameSelectors?: string[][] }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button id="submit">Submit</button>`);
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  const generated = await page.locator('#submit').generateSelectors();
+  expect(generated.selector).toBe(events[0].selector);
+  expect(generated.selectors).toEqual(events[0].selectors);
+  expect(generated.selectors.length).toBeGreaterThan(1);
+  expect(generated.frameSelectors).toEqual([]);
+  await recordedContext.close();
+});
+
+test('generateSelectors returns the frame chain for elements inside iframes', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: { action: string, selector: string, selectors: string[], frameSelectors?: string[][] }[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<iframe id="frame1" srcdoc="<button id='inner'>Go</button>"></iframe>`);
+  const button = page.frameLocator('#frame1').locator('#inner');
+  await button.click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  const generated = await button.generateSelectors();
+  expect(generated.selectors).toEqual(events[0].selectors);
+  expect(generated.frameSelectors).toEqual(events[0].frameSelectors);
+  expect(generated.frameSelectors).toHaveLength(1);
+  expect(generated.frameSelectors[0].length).toBeGreaterThan(0);
+  await recordedContext.close();
+});
+
+test('generateSelectors promotes to the interactive ancestor and needs no recorder', async ({ context }) => {
+  // Plain context — no recordSelectors, no recorder session: generation lives on core
+  // InjectedScript. The icon resolves to the enclosing button exactly like a fresh
+  // recording of a click on the icon would.
+  const page = await context.newPage();
+  await page.setContent(`<button id="btn"><span id="icon">star</span></button>`);
+  const forIcon = await page.locator('#icon').generateSelectors();
+  const forButton = await page.locator('#btn').generateSelectors();
+  expect(forIcon.selectors).toEqual(forButton.selectors);
+  expect(forIcon.selectors.length).toBeGreaterThan(1);
+});
+
+test('generateSelectors rejects when the locator is ambiguous or resolves to nothing', async ({ context }) => {
+  context.setDefaultTimeout(1000);
+  const page = await context.newPage();
+  await page.setContent(`<div class="x"></div><div class="x"></div>`);
+  await expect(page.locator('.x').generateSelectors()).rejects.toThrow(/strict mode violation/);
+  await expect(page.locator('#missing').generateSelectors()).rejects.toThrow(/Timeout/);
+});

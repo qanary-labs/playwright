@@ -1267,6 +1267,15 @@ scheme.FrameAriaSnapshotParams = tObject({
 scheme.FrameAriaSnapshotResult = tObject({
   snapshot: tString,
 });
+scheme.FrameGenerateSelectorsParams = tObject({
+  selector: tString,
+  timeout: tFloat,
+});
+scheme.FrameGenerateSelectorsResult = tObject({
+  selector: tString,
+  selectors: tArray(tString),
+  frameSelectors: tArray(tArray(tString)),
+});
 scheme.FrameBlurParams = tObject({
   selector: tString,
   strict: tOptional(tBoolean),

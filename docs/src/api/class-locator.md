@@ -1376,6 +1376,40 @@ await locator.ClickAsync();
 ### param: Locator.frameLocator.selector = %%-find-selector-%%
 * since: v1.17
 
+## async method: Locator.generateSelectors
+* since: v1.60
+* from Qanary fork
+- returns: <[Object]>
+  - `selector` <[string]> Best-ranked selector, equal to the first entry of `selectors`.
+  - `selectors` <[Array]<[string]>> Ranked selector expressions, best first — the same lists the recorder emits at capture time.
+  - `frameSelectors` <[Array]<[Array]<[string]>>> Ranked frame selectors per iframe of the element's frame chain, outermost first. Empty for elements in the main frame.
+
+Generates fresh selector expressions for the element the locator resolves to, using the same
+engine and options the recorder runs at capture time. Rejects when the locator does not resolve
+to exactly one attached element.
+
+**Usage**
+
+```js
+const { selector, selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
+```
+
+```java
+page.locator("#submit").generateSelectors();
+```
+
+```python async
+await page.locator("#submit").generate_selectors()
+```
+
+```python sync
+page.locator("#submit").generate_selectors()
+```
+
+```csharp
+await page.Locator("#submit").GenerateSelectorsAsync();
+```
+
 ## async method: Locator.getAttribute
 * since: v1.14
 - returns: <[null]|[string]>

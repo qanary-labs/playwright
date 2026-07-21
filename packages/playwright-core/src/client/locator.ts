@@ -329,6 +329,10 @@ export class Locator implements api.Locator {
     return result.snapshot;
   }
 
+  async generateSelectors(): Promise<{ selector: string, selectors: string[], frameSelectors: string[][] }> {
+    return await this._frame._channel.generateSelectors({ selector: this._selector, timeout: this._frame._timeout() });
+  }
+
   async scrollIntoViewIfNeeded(options: channels.ElementHandleScrollIntoViewIfNeededOptions & TimeoutOptions = {}) {
     return await this._withElement((h, timeout) => h.scrollIntoViewIfNeeded({ ...options, timeout }), { title: 'Scroll into view', timeout: options.timeout });
   }

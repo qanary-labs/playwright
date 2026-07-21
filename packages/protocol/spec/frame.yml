@@ -93,6 +93,23 @@ Frame:
       returns:
         snapshot: string
 
+    generateSelectors:
+      title: Generate selectors
+      group: getter
+      parameters:
+        selector: string
+        timeout: float
+      returns:
+        selector: string
+        selectors:
+          type: array
+          items: string
+        frameSelectors:
+          type: array
+          items:
+            type: array
+            items: string
+
     blur:
       title: Blur
       parameters:

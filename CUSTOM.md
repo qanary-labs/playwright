@@ -107,6 +107,21 @@
     Run these after every rebase — an upstream recorder change that silently breaks the engine
     shows up here first.
 
+- **`Locator.generateSelectors()`** — public on-demand selector generation for the element a
+  locator strictly resolves to (consumer: zazu's relocate mode, see its
+  `docs/specs/relocate-mode.md`). Returns the same ranked `selector`/`selectors` the recorder
+  emits at capture time, plus `frameSelectors` for elements inside iframes (reuses the
+  recorder's `generateFrameSelector` walk). Generation calls core
+  `injectedScript.generateSelector` with record mode's exact options (`multiple: true`,
+  `collectSelectors: true` — what `recordSelectors: true` hardwires — and the context's
+  `testIdAttributeName`), so ranking and interactive-ancestor promotion match a fresh recording
+  by construction; no recorder session is required. Plumbing follows the standard channel path:
+  `packages/protocol/spec/frame.yml` → generated channels/validator/metainfo,
+  `server/frames.ts` (`generateSelectors`), `server/dispatchers/frameDispatcher.ts`,
+  `client/locator.ts`, `docs/src/api/class-locator.md` (regenerates `types.d.ts`). Guarded by
+  the `generateSelectors` tests (capture parity, frame chain, promotion, strictness) in
+  `tests/library/inspector/recorder-api.spec.ts`.
+
 ## Installation
 
 Follow [CONTRIBUTING.md](./CONTRIBUTING.md) guidelines.

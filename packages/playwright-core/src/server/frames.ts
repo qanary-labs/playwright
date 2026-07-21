@@ -34,6 +34,7 @@ import { SdkObject } from './instrumentation';
 import * as js from './javascript';
 import * as network from './network';
 import { Page, ariaSnapshotForFrame } from './page';
+import { generateFrameSelector } from './recorder/recorderUtils';
 import { isAbortError, nullProgress, ProgressController } from './progress';
 import * as types from './types';
 import { isSessionClosedError } from './protocolError';
@@ -1810,6 +1811,25 @@ export class Frame extends SdkObject<FrameEventMap> {
     const injectedScript = await context.injectedScript();
     return injectedScript.evaluate(injectedScript => {
       return injectedScript.getSelectedText();
+    });
+  }
+
+  // On-demand selector generation for an already-resolved element: the exact ranked
+  // lists the recorder emits at capture time. The generation options mirror record
+  // mode's (`recordSelectors: true` hardwires collectSelectors, same testIdAttributeName
+  // fallback chain), and generation runs on the element `selector` strictly resolves to,
+  // so ranking and interactive-ancestor promotion match a fresh recording by construction.
+  async generateSelectors(progress: Progress, selector: string): Promise<{ selector: string, selectors: string[], frameSelectors: string[][] }> {
+    return await this._retryWithProgressIfNotConnected(progress, selector, { strict: true, performActionPreChecks: true }, async (progress, handle) => {
+      const testIdAttributeName = this._page.browserContext.selectors().testIdAttributeName() || 'data-testid';
+      const generated = await progress.race(handle.evaluateInUtility(([injected, element, { testIdAttributeName }]) => {
+        const result = injected.generateSelector(element, { testIdAttributeName, multiple: true, collectSelectors: true });
+        return { selector: result.selector, selectors: result.selectors };
+      }, { testIdAttributeName }));
+      if (generated === 'error:notconnected')
+        return generated;
+      const { frameSelectors } = await generateFrameSelector(progress, handle._frame);
+      return { ...generated, frameSelectors };
     });
   }
 }

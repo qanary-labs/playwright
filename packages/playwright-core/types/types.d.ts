@@ -14053,6 +14053,37 @@ export interface Locator {
   frameLocator(selector: string): FrameLocator;
 
   /**
+   * - from Qanary fork
+   *
+   * Generates fresh selector expressions for the element the locator resolves to, using the same engine and options the
+   * recorder runs at capture time. Rejects when the locator does not resolve to exactly one attached element.
+   *
+   * **Usage**
+   *
+   * ```js
+   * const { selector, selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
+   * ```
+   *
+   */
+  generateSelectors(): Promise<{
+    /**
+     * Best-ranked selector, equal to the first entry of `selectors`.
+     */
+    selector: string;
+
+    /**
+     * Ranked selector expressions, best first — the same lists the recorder emits at capture time.
+     */
+    selectors: Array<string>;
+
+    /**
+     * Ranked frame selectors per iframe of the element's frame chain, outermost first. Empty for elements in the main
+     * frame.
+     */
+    frameSelectors: Array<Array<string>>;
+  }>;
+
+  /**
    * Returns the matching element's attribute value.
    *
    * **NOTE** If you need to assert an element's attribute, prefer
