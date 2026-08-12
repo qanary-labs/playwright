@@ -122,6 +122,89 @@
   the `generateSelectors` tests (capture parity, frame chain, promotion, strictness) in
   `tests/library/inspector/recorder-api.spec.ts`.
 
+- **Covered-target substitution inside `click`** — the fork's one change to what `click` may
+  click, and its only change to `click` at all. Some interactive tiles stack sibling anchors
+  that all navigate to the same URL and reveal one above the others on hover. Clicking requires
+  moving the mouse onto the element, which is what reveals the cover, so the click creates its
+  own interceptor: every retry re-hovers and the hit-target check fails again. A real user never
+  clicks the underlay — their click lands on the cover, whose anchor declares the same
+  destination — and that is what this reproduces. Full rationale: zazu's
+  `docs/specs/covered-target-click-fallback.md`.
+
+  **It never shortens a failure.** The caller's timeout stays the only thing that ends the retry
+  loop, with the error it always produced. When the substitution declines, `_retryAction` simply
+  continues. A refusal costs nothing and looks like nothing.
+
+  *Knowing the target is unreachable.* No new hit test was needed: the action already runs two,
+  and they were merely indistinguishable to the caller. `setupHitTargetInterceptor` checks the
+  point *before* the interceptor is armed and the pointer has moved; the interceptor's listener
+  checks again on the first real event. Preliminary passing and event-time failing means the
+  cover materialised as the pointer arrived, so retrying cannot converge — carried as
+  `revealedUnderPointer` on the existing `{ hitTargetDescription }` result. Both paths also
+  carry the point it happened at, in viewport and frame coordinates, so the substitution works
+  from what the failed attempt resolved instead of re-deriving it. The flag is withheld when the
+  preliminary check was skipped: a transformed iframe has no translatable hit point, so an
+  event-time interception there says nothing about when the cover appeared.
+
+  *When it may fire.* Proof is necessary but not sufficient — substituting must never pre-empt a
+  click that was about to work. `_retryAction` waits for one attempt per scroll alignment (the
+  alignments are cycled precisely because a sticky overlay often *is* escapable by scrolling
+  differently), which also costs the loop's own `0+20+100+100ms` of waiting, so a cover that
+  clears on its own is waited out rather than substituted for. Any attempt not ending in an
+  interception resets the count, and so does a locator handler running: `addLocatorHandler`
+  exists to dismiss exactly these overlays, so a handler firing is the page being actively
+  changed between attempts — the opposite of the futility the proof claims.
+  `performActionPreChecks` and `_performLocatorHandlersCheckpoint` (`server/page.ts`) return
+  whether a handler ran, for that reason alone. Offered at most once per action call, re-armed
+  when those counters reset, and only for plain left single clicks (no modifiers, no
+  multi-click, no `force`, no `trial`) — anything else means something a cover cannot be assumed
+  to do the same way. No other action offers a recovery.
+
+  *Guards*, all required: the target is (or is inside) a link whose `href` leads somewhere — a
+  bare `#` and `javascript:` are the "anchor as button" idioms and prove nothing; something
+  other than the target is on top at the point; the element on top is inside a link resolving to
+  the identical absolute URL; both links carry the same `target` attribute. Interception from an
+  ancestor document never arrives here at all — the frame check catches it before the
+  interceptor is armed, so it is never flagged as pointer-revealed.
+
+  The design point is that the guards read the hit chain the browser itself hit-tests. Rather
+  than rebuild an approximation from outside the page — `document.elementFromPoint` plus
+  `closest('a')` — `expectHitTarget` was split so its chain is reusable: it descends into the
+  target's own shadow roots (so "nothing intercepts" stays correct for a target inside one),
+  carries the `display: contents` and cross-browser element-ordering workarounds, and walks
+  `assignedSlot ?? parentElementOrShadowHost` — the composed tree a click is dispatched along,
+  which for slotted content reaches an anchor `closest()` cannot see. Targets are retargeted
+  with the same `'button-link'` behavior `setupHitTargetInterceptor` uses, so this and the check
+  that just failed agree on which element they mean. Nothing is re-derived between deciding and
+  clicking, so there is no window for the page to move in between.
+
+  Known limits, each pinned by a test: a cover already present when the click starts is never
+  proven unreachable and is refused even when it leads to the same place; likewise a cover
+  revealed by an *earlier* action with the pointer still parked on the element, since the
+  evidence is a transition; and an interceptor whose anchor lives inside a *closed* shadow root
+  is opaque to everything outside it, this chain included.
+
+  Deliberately silent: `click` returns void and records the substitution only in its call log,
+  so a caller cannot tell a substituted click from a plain one. Giving `click` a return value
+  would change the signature of the most-used method in the API for one consumer. If that ever
+  needs fixing, a page event is the additive way.
+
+  Files: `packages/injected/src/coveredTarget.ts` (the guards, kept out of upstream files),
+  `packages/injected/src/injectedScript.ts` (`hitTargetChain` extracted from `expectHitTarget`,
+  which is otherwise unchanged, plus a thin `coveredTargetHref`), `server/dom.ts`
+  (`PerformActionResult`, `scrollAlignments` hoisted to module scope so `_retryAction` can count
+  against its length, `_performPointerAction`, `_retryAction`'s counters and recovery hook,
+  `_click`'s eligibility gate, `_clickCoveredTarget`), `server/page.ts` (the two pre-check
+  functions returning a boolean). No protocol, client, type or docs change: this is not new API,
+  and no upstream test file is modified. Guarded by
+  `tests/page/click-covered-target.spec.ts`; run with
+  `npx playwright test --config=tests/library/playwright.config.ts --project="chromium-*" click-covered-target`.
+  Its refusal and restraint cases are the regression tests — this makes `click` hit an element
+  other than the one asked for, so every guard preventing it from doing so wrongly is pinned
+  there, refusals assert an empty click log *and* a failure on the caller's timeout, and every
+  fixture is hover-revealed because a cover present at rest would refuse without the guards
+  being consulted at all.
+
 ## Installation
 
 Follow [CONTRIBUTING.md](./CONTRIBUTING.md) guidelines.

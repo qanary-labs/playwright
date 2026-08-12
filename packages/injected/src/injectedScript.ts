@@ -20,6 +20,7 @@ import { parseAttributeSelector, parseSelector, stringifySelector, visitAllSelec
 import { cacheNormalizedWhitespaces, normalizeWhiteSpace, trimStringWithEllipsis } from '@isomorphic/stringUtils';
 
 import { generateAriaTree, getAllElementsMatchingExpectAriaTemplate, matchesExpectAriaTemplate, renderAriaTree, findNewElement } from './ariaSnapshot';
+import { coveredTargetHref } from './coveredTarget';
 import { beginDOMCaches, enclosingShadowRootOrDocument, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost, setGlobalOptions } from './domUtils';
 import { Highlight } from './highlight';
 import { kLayoutSelectorNames, layoutSelectorScore } from './layoutSelectorUtils';
@@ -958,7 +959,13 @@ export class InjectedScript {
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  expectHitTarget(hitPoint: { x: number, y: number }, targetElement: Element) {
+  // Resolves the chain of elements the browser would hit at `hitPoint`: the topmost hit
+  // element first, then its composed-tree ancestors up to the document root. Returns
+  // 'done' when the hit lands on the target or inside it, meaning nothing intercepts.
+  // Extracted from expectHitTarget so consumers needing the elements themselves (the
+  // covered-target fallback, see clickCoveredTarget) read the very chain the browser
+  // hit-tests, instead of rebuilding an approximation of it from outside the page.
+  hitTargetChain(hitPoint: { x: number, y: number }, targetElement: Element): 'done' | Element[] {
     const roots: (Document | ShadowRoot)[] = [];
 
     // Get all component roots leading to the target element.
@@ -1019,6 +1026,13 @@ export class InjectedScript {
     }
     if (hitElement === targetElement)
       return 'done';
+    return hitParents;
+  }
+
+  expectHitTarget(hitPoint: { x: number, y: number }, targetElement: Element) {
+    const hitParents = this.hitTargetChain(hitPoint, targetElement);
+    if (hitParents === 'done')
+      return 'done';
 
     const hitTargetDescription = this.previewNode(hitParents[0] || this.document.documentElement);
     // Root is the topmost element in the hitTarget's chain that is not in the
@@ -1038,6 +1052,18 @@ export class InjectedScript {
     if (rootHitTargetDescription)
       return { hitTargetDescription: `${hitTargetDescription} from ${rootHitTargetDescription} subtree` };
     return { hitTargetDescription };
+  }
+
+  // Covered-target click fallback, see coveredTarget.ts. Returns the destination shared by
+  // the target and whatever covers it at `hitPoint`, or null when they do not share one.
+  coveredTargetHref(hitPoint: { x: number, y: number }, node: Node): string | null {
+    // Retarget exactly as the click path does (setupHitTargetInterceptor uses the same
+    // 'button-link' behavior), so that "nothing intercepts" here means what it meant to
+    // the hit-target check that just failed.
+    const element = this.retarget(node, 'button-link');
+    if (!element)
+      return null;
+    return coveredTargetHref(element, this.hitTargetChain(hitPoint, element));
   }
 
   // Life of a pointer action, for example click.

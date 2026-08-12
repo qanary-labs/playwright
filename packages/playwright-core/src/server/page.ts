@@ -531,9 +531,10 @@ export class Page extends SdkObject<PageEventMap> {
 
   async performActionPreChecks(progress: Progress) {
     await this._performWaitForNavigationCheck(progress);
-    await this._performLocatorHandlersCheckpoint(progress);
+    const ranLocatorHandler = await this._performLocatorHandlersCheckpoint(progress);
     // Wait once again, just in case a locator handler caused a navigation.
     await this._performWaitForNavigationCheck(progress);
+    return ranLocatorHandler;
   }
 
   private async _performWaitForNavigationCheck(progress: Progress) {
@@ -554,10 +555,13 @@ export class Page extends SdkObject<PageEventMap> {
     }).promise;
   }
 
+  // Returns whether any handler actually ran, which tells the action retry loop that the page
+  // was changed between attempts (fork addition, see CUSTOM.md).
   private async _performLocatorHandlersCheckpoint(progress: Progress) {
+    let ranHandler = false;
     // Do not run locator handlers from inside locator handler callbacks to avoid deadlocks.
     if (this._locatorHandlerRunningCounter)
-      return;
+      return ranHandler;
     for (const [uid, handler] of this._locatorHandlers) {
       if (!handler.resolved) {
         if (await this.mainFrame().isVisibleInternal(progress, handler.selector, { strict: true })) {
@@ -584,8 +588,10 @@ export class Page extends SdkObject<PageEventMap> {
           --this._locatorHandlerRunningCounter;
         }
         progress.log(`  interception handler has finished, continuing`);
+        ranHandler = true;
       }
     }
+    return ranHandler;
   }
 
   async emulateMedia(progress: Progress, options: Partial<EmulatedMedia>) {

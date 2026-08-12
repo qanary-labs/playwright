@@ -39,7 +39,23 @@ export type InputFilesItems = {
 };
 
 type ActionName = 'click' | 'hover' | 'dblclick' | 'tap' | 'move and up' | 'move and down' | 'drop';
-type PerformActionResult = 'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | 'error:optionsnotfound' | 'error:optionnotenabled' | { missingState: ElementState } | { hitTargetDescription: string } | 'done';
+// Everything past `hitTargetDescription` is a fork addition (see CUSTOM.md).
+// `revealedUnderPointer`: the interception was absent when the interceptor was installed and
+// present by the time the event fired, so it materialized while the pointer was arriving on the
+// element. `point`/`hitPoint`: where that happened, in viewport and frame coordinates, so a
+// recovery works from what the failed attempt already resolved instead of re-deriving it.
+type HitTargetInterception = { hitTargetDescription: string, revealedUnderPointer?: boolean, point?: types.Point, hitPoint?: types.Point };
+type PerformActionResult = 'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | 'error:optionsnotfound' | 'error:optionnotenabled' | { missingState: ElementState } | HitTargetInterception | 'done';
+
+// Cycled across retries by _retryPointerAction to scroll the element out from under sticky
+// overlays. Module-level because _retryAction counts retries against its length: only once
+// every alignment has been tried has the loop exhausted what re-scrolling can do.
+const scrollAlignments: (ScrollIntoViewOptions | undefined)[] = [
+  undefined,
+  { block: 'end', inline: 'end' },
+  { block: 'center', inline: 'center' },
+  { block: 'start', inline: 'start' },
+];
 
 export class NonRecoverableDOMError extends Error {
 }
@@ -316,11 +332,21 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     };
   }
 
-  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean }): Promise<'error:notconnected' | 'done'> {
+  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined> }): Promise<'error:notconnected' | 'done'> {
     let retry = 0;
     // We progressively wait longer between retries, up to 500ms.
     const waitTime = [0, 20, 100, 100, 500];
     const noAutoWaiting = (options as any).__testHookNoAutoWaiting ?? options.noAutoWaiting;
+    // Fork addition (see CUSTOM.md): an interception created by the pointer's own arrival is
+    // self-defeating — reaching the element requires moving onto it, which is what puts the
+    // cover there — so retrying cannot converge. That is not a reason to stop: the caller's
+    // timeout remains the only thing that ends this loop. It is the point at which an action
+    // may offer another way to the same outcome, which only click does. All three are cleared
+    // by any attempt that does not end in an interception, so a cover that is merely transient
+    // still gets the full budget, and a page that changes gets a fresh chance.
+    let interceptionRevealedUnderPointer = false;
+    let consecutiveInterceptions = 0;
+    let recoveryAttempted = false;
 
     while (true) {
       if (retry) {
@@ -335,10 +361,23 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       } else {
         progress.log(`attempting ${actionName} action${options.trial ? ' (trial run)' : ''}`);
       }
-      if (!options.skipActionPreChecks && !options.force && !noAutoWaiting)
-        await this._frame._page.performActionPreChecks(progress);
+      if (!options.skipActionPreChecks && !options.force && !noAutoWaiting) {
+        // A locator handler running means the page was actively changed between attempts —
+        // dismissing exactly the kind of overlay this loop waits out — so nothing learned from
+        // the previous interception describes the next one. Start the count over.
+        if (await this._frame._page.performActionPreChecks(progress)) {
+          interceptionRevealedUnderPointer = false;
+          consecutiveInterceptions = 0;
+          recoveryAttempted = false;
+        }
+      }
       const result = await action(progress, retry);
       ++retry;
+      if (typeof result !== 'object' || !('hitTargetDescription' in result)) {
+        interceptionRevealedUnderPointer = false;
+        consecutiveInterceptions = 0;
+        recoveryAttempted = false;
+      }
       if (result === 'error:notvisible') {
         if (options.force || noAutoWaiting)
           throw new NonRecoverableDOMError('Element is not visible');
@@ -367,6 +406,18 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
         if (noAutoWaiting)
           throw new NonRecoverableDOMError(`${result.hitTargetDescription} intercepts pointer events`);
         progress.log(`  ${result.hitTargetDescription} intercepts pointer events`);
+        interceptionRevealedUnderPointer ||= !!result.revealedUnderPointer;
+        ++consecutiveInterceptions;
+        // Only once every scroll alignment has been tried against the interception: a sticky
+        // overlay can genuinely be escaped by scrolling differently, which is the whole reason
+        // the alignments are cycled, and substituting before that would replace a click that
+        // was about to land on the target. A cover the pointer creates cannot be escaped.
+        if (interceptionRevealedUnderPointer && !recoveryAttempted && consecutiveInterceptions > scrollAlignments.length) {
+          recoveryAttempted = true;
+          progress.log(`  interception appeared under the pointer and survived every scroll alignment`);
+          if (await options.recoverFromUnreachableTarget?.(progress, result) === 'done')
+            return 'done';
+        }
         continue;
       }
       if (typeof result === 'object' && 'missingState' in result) {
@@ -380,7 +431,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _retryPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (progress: Progress, point: types.Point) => Promise<void>,
-    options: { waitAfter: boolean | 'disabled' } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    options: { waitAfter: boolean | 'disabled', recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined> } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     // Note: do not perform locator handlers checkpoint to avoid moving the mouse in the middle of a drag operation.
     const skipActionPreChecks = actionName === 'move and up';
     return await this._retryAction(progress, actionName, async (progress, retry) => {
@@ -388,13 +439,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       // However, that might not work to scroll from under position:sticky elements
       // that overlay the target element. To fight this, we cycle through different
       // scroll alignments. This works in most scenarios.
-      const scrollOptions: (ScrollIntoViewOptions | undefined)[] = [
-        undefined,
-        { block: 'end', inline: 'end' },
-        { block: 'center', inline: 'center' },
-        { block: 'start', inline: 'start' },
-      ];
-      const forceScrollOptions = scrollOptions[retry % scrollOptions.length];
+      const forceScrollOptions = scrollAlignments[retry % scrollAlignments.length];
       return await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options);
     }, { ...options, skipActionPreChecks });
   }
@@ -459,6 +504,12 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     await progress.race(this.instrumentation.onBeforeInputAction(this, progress.metadata));
 
     let hitTargetInterceptionHandle: js.JSHandle<HitTargetInterceptionResult> | undefined;
+    // Whether setupHitTargetInterceptor ran its preliminary check below. It is skipped for a
+    // transformed iframe, where no hit point can be translated — there, an interception seen at
+    // event time proves nothing about when it appeared.
+    let preliminaryHitTargetChecked = false;
+    // The action point translated into this element's own frame, kept for the same reason.
+    let frameHitPoint: types.Point | undefined;
     if (force) {
       progress.log(`  forcing action`);
     } else {
@@ -469,6 +520,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       if (frameCheckResult === 'error:notconnected' || ('hitTargetDescription' in frameCheckResult))
         return frameCheckResult;
       const hitPoint = frameCheckResult.framePoint;
+      preliminaryHitTargetChecked = !!hitPoint;
+      frameHitPoint = hitPoint;
       const actionType = actionName === 'move and up' ? 'drag' : ((actionName === 'hover' || actionName === 'tap') ? actionName : 'mouse');
       const handle = await progress.race(this._evaluateHandleInUtility(([injected, node, { actionType, hitPoint, trial }]) => injected.setupHitTargetInterceptor(node, actionType, hitPoint, trial), { actionType, hitPoint, trial: !!options.trial } as const));
       if (handle === 'error:notconnected')
@@ -477,7 +530,11 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
         const error = handle.rawValue() as string;
         if (error === 'error:notconnected')
           return error;
-        return { hitTargetDescription: error };
+        // Not `revealedUnderPointer`: this interception was already there. It still carries the
+        // point, because once the pointer has parked on the element from an earlier attempt a
+        // cover it revealed is found by this check rather than the event-time one, and a
+        // recovery needs the point wherever it was caught.
+        return { hitTargetDescription: error, point, hitPoint };
       }
       hitTargetInterceptionHandle = handle as any;
     }
@@ -502,8 +559,11 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
           // When noWaitAfter is passed, we do not want to accidentally stall on
           // non-committed navigation blocking the evaluate.
           const hitTargetResult = await progress.race(stopHitTargetInterception);
-          if (hitTargetResult !== 'done')
-            return hitTargetResult;
+          if (hitTargetResult !== 'done') {
+            // The preliminary check passed for this same point moments ago — otherwise we
+            // returned above — so this interceptor was not there before the pointer moved.
+            return { ...hitTargetResult, revealedUnderPointer: preliminaryHitTargetChecked, point, hitPoint: frameHitPoint };
+          }
         }
       }
       progress.log(`  ${options.trial ? 'trial ' : ''}${actionName} action done`);
@@ -602,7 +662,42 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     }, {}));
     const labelTarget = labelHandle !== 'error:notconnected' ? labelHandle.asElement() : null;
     const target = (labelTarget as ElementHandle<Element> | null) ?? this;
-    return target._retryPointerAction(progress, 'click', true /* waitForEnabled */, (progress, point) => this._page.mouse.click(progress, point.x, point.y, options), options);
+    // Covered-target substitution (fork addition, see CUSTOM.md): only a plain left single
+    // click carries an intent — reach this destination — that a same-destination cover
+    // provably satisfies. Middle, right, multi and modifier clicks mean something else, and
+    // force/trial never reach a hit-target check to begin with.
+    const plainLeftSingleClick = !options.force && !options.trial
+      && (options.button ?? 'left') === 'left' && (options.clickCount ?? 1) === 1
+      && !options.modifiers?.length;
+    return target._retryPointerAction(progress, 'click', true /* waitForEnabled */, (progress, point) => this._page.mouse.click(progress, point.x, point.y, options), {
+      ...options,
+      recoverFromUnreachableTarget: plainLeftSingleClick ? (progress, interception) => target._clickCoveredTarget(progress, interception) : undefined,
+    });
+  }
+
+  // Covered-target substitution, the recovery _click hands to _retryAction. Some tiles stack
+  // sibling anchors that all navigate to the same URL and reveal one above the others on
+  // hover; since clicking requires moving the mouse onto the element, the click reveals its
+  // own interceptor and no amount of retrying converges. Once the loop has proved that, this
+  // asks whether whatever sits on top leads exactly where the target leads (see injected
+  // coveredTarget.ts for the guard chain) and, only then, clicks the point for real.
+  //
+  // Everything it needs was resolved by the attempt that just failed: the point is the one
+  // that click used, the pointer is still resting on it, and the frame check that produced
+  // `hitPoint` also refused ancestor-document interception before any of this. Nothing is
+  // re-derived, so there is no window for the page to move between deciding and clicking.
+  private async _clickCoveredTarget(progress: Progress, interception: HitTargetInterception): Promise<'done' | undefined> {
+    const { point, hitPoint } = interception;
+    if (!point || !hitPoint)
+      return;
+    const href = await progress.race(this.evaluateInUtility(([injected, node, hitPoint]) => {
+      return injected.coveredTargetHref(hitPoint, node);
+    }, hitPoint));
+    if (href === 'error:notconnected' || href === null)
+      return;
+    progress.log(`  the element covering the target leads to "${href}" as well, clicking it instead`);
+    await this._page.mouse.click(progress, point.x, point.y);
+    return 'done';
   }
 
   async dblclick(progress: Progress, options: types.MouseMultiClickOptions & types.PointerActionWaitOptions): Promise<void> {
