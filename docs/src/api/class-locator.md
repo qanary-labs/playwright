@@ -1380,9 +1380,12 @@ await locator.ClickAsync();
 * since: v1.60
 * from Qanary fork
 - returns: <[Object]>
-  - `selector` <[string]> Best-ranked selector, equal to the first entry of `selectors`.
-  - `selectors` <[Array]<[string]>> Ranked selector expressions, best first — the same lists the recorder emits at capture time.
-  - `frameSelectors` <[Array]<[Array]<[string]>>> Ranked frame selectors per iframe of the element's frame chain, outermost first. Empty for elements in the main frame.
+  - `selectors` <[Array]<[Object]>> The scored set the recorder collects at capture time, sorted strongest first.
+    - `selector` <[string]> Selector expression.
+    - `score` <[float]> Playwright's engine score for it — **lower is stronger**. Ordinal, and only comparable between selectors of the same element.
+  - `frameSelectors` <[Array]<[Array]<[Object]>>> One scored candidate set per iframe of the element's frame chain, outermost first — same shape and score scale as `selectors`. Empty for elements in the main frame.
+    - `selector` <[string]> Selector expression for that iframe element.
+    - `score` <[float]> Playwright's engine score for it — **lower is stronger**.
 
 Generates fresh selector expressions for the element the locator resolves to, using the same
 engine and options the recorder runs at capture time. Rejects when the locator does not resolve
@@ -1391,7 +1394,7 @@ to exactly one attached element.
 **Usage**
 
 ```js
-const { selector, selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
+const { selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
 ```
 
 ```java
@@ -1409,6 +1412,13 @@ page.locator("#submit").generate_selectors()
 ```csharp
 await page.Locator("#submit").GenerateSelectorsAsync();
 ```
+
+### option: Locator.generateSelectors.maxSelectors
+* since: v1.60
+- `maxSelectors` <[int]>
+
+How many selectors `selectors` may carry. Defaults to 10, matching what the recorder
+collects at capture time, so a relocated step matches a freshly-recorded one.
 
 ## async method: Locator.getAttribute
 * since: v1.14

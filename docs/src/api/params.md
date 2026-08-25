@@ -816,9 +816,12 @@ When set to `minimal`, only record information necessary for routing from HAR. T
 
 ## context-option-recordselectors
 * langs: js
-- `recordSelectors` <[boolean]>
+- `recordSelectors` <[boolean]|[Object]>
+  - `max` ?<[int]> How many selectors [`property: RecorderActionPayload.selectors`] may carry per action. Defaults to `10`.
 
-Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value, sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the selectors in your own tooling.
+Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the selectors in your own tooling.
+
+Pass `true` for the defaults, or an object to set the collection budget.
 
 ## context-option-recordselectors-csharp-java-python
 * langs: csharp, java, python

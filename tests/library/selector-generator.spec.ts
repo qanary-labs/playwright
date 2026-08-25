@@ -799,4 +799,226 @@ it.describe('selector generator', () => {
     }, result.selectors);
   });
 
+  // Qanary fork: the collected, scored set (zazu's docs/specs/weighted-locator-generation.md).
+  // The suite above is this feature's real guard - it pins the primary selector for ~100 DOM
+  // shapes, and collection is only safe because nothing it adds ever reaches selection.
+  it.describe('collected selectors', () => {
+    type Collected = { selector: string, selectors: string[], ranked: { selector: string, score: number }[] };
+
+    async function collect(page: Page, target: string, maxSelectors?: number): Promise<Collected> {
+      await page.waitForFunction(() => !!(window as any).__injectedScript?.generateSelector);
+      return page.$eval(target, (element, maxSelectors) => {
+        const result = (window as any).__injectedScript.generateSelector(element, {
+          multiple: true,
+          testIdAttributeName: 'data-testid',
+          collectSelectors: true,
+          maxSelectors,
+        });
+        return { selector: result.selector, selectors: result.selectors, ranked: result.rankedSelectors };
+      }, maxSelectors);
+    }
+
+    async function assertAllResolve(page: Page, target: string, selectors: string[]) {
+      const bad = await page.$eval(target, (element, selectors) => {
+        const injected = (window as any).__injectedScript;
+        return selectors.filter(selector => {
+          const matches = injected.querySelectorAll(injected.parseSelector(selector), document);
+          return matches.length !== 1 || matches[0] !== element;
+        });
+      }, selectors);
+      expect(bad, 'every collected selector resolves to the target alone').toEqual([]);
+    }
+
+    // A repeated list: the shape where the engine emitted two text-derived selectors and
+    // nothing else, because nth >= 6 is refused and unique candidates never chained.
+    const cards = (count: number) => `<main>${[...Array(count).keys()].map(i => `
+      <div class="card" data-idx="${i}">
+        <div class="card__inner"><div class="card__body">
+          <a class="card__link" href="/item/${i}">Open ${i}</a>
+          <input class="card__input" id="qty-${i}" name="qty-${i}" placeholder="Quantity ${i}">
+        </div></div>
+      </div>`).join('')}</main>`;
+
+    it('collects a scored set that resolves to the target and contains the legacy one', async ({ page }) => {
+      await page.setContent(`
+        <div class="container">
+          <button id="primary-submit" class="btn cta" data-testid="submit-primary" title="Submit order">Submit order</button>
+          <button class="btn ghost" data-testid="cancel-secondary">Cancel</button>
+        </div>`);
+      const { selector, selectors, ranked } = await collect(page, '#primary-submit');
+
+      expect(ranked.length).toBeGreaterThan(selectors.length);
+      expect(ranked.length).toBeLessThanOrEqual(10);
+      // Superset: a consumer can switch to the scored list wholesale.
+      const collected = ranked.map(entry => entry.selector);
+      for (const legacy of [selector, ...selectors])
+        expect(collected).toContain(legacy);
+      // Sorted by score, lower is stronger - position carries no other meaning.
+      expect(ranked.map(entry => entry.score)).toEqual([...ranked.map(entry => entry.score)].sort((a, b) => a - b));
+      await assertAllResolve(page, '#primary-submit', collected);
+    });
+
+    it('refuses build-generated class names, and keeps hand-written ones', async ({ page }) => {
+      // Same element twice: once named by classes a build tool emitted, once by classes a
+      // person wrote. Only the shape of the name differs.
+      await page.setContent(`
+        <div class="sc-imWYAI jLBYtg">
+          <section class="elementor-element elementor-element-1f1818a">
+            <button class="sc-GTVdH hUyBqQ" data-testid="generated-button">Generated</button>
+          </section>
+        </div>
+        <div class="product-card">
+          <section class="card__body col-md-6 text-2xl">
+            <button class="single_add_to_cart_button ecomGalleryMainSlide">Written</button>
+          </section>
+        </div>
+        <div class="formkit7-form-control">
+          <button class="espaceDeTravailDDC">Named</button>
+        </div>`);
+
+      const generated = (await collect(page, 'button.sc-GTVdH')).ranked.map(entry => entry.selector);
+      for (const className of ['sc-imWYAI', 'jLBYtg', 'sc-GTVdH', 'hUyBqQ', 'elementor-element-1f1818a'])
+        expect(generated.join(' '), `no locator may be anchored on .${className}`).not.toContain(className);
+      // Refusing them costs the step nothing: the durable evidence is still collected.
+      expect(generated.length).toBeGreaterThan(0);
+      await assertAllResolve(page, 'button.sc-GTVdH', generated);
+
+      // The refusal is about randomness, not about classes: descriptive names survive,
+      // camelCase included.
+      const written = (await collect(page, 'button.single_add_to_cart_button')).ranked.map(entry => entry.selector);
+      expect(written.some(selector => selector.includes('single_add_to_cart_button'))).toBe(true);
+      expect(written.some(selector => selector.includes('card__body') || selector.includes('product-card'))).toBe(true);
+      await assertAllResolve(page, 'button.single_add_to_cart_button', written);
+
+      // Two shapes that a looser rule mistakes for hashes, both common in the wild: a
+      // plugin prefix carrying one version digit, and a camelCase name ending in an
+      // acronym. Neither changes between builds, so neither may be refused.
+      const named = (await collect(page, 'button.espaceDeTravailDDC')).ranked.map(entry => entry.selector);
+      expect(named.some(selector => selector.includes('espaceDeTravailDDC'))).toBe(true);
+      expect(named.some(selector => selector.includes('formkit7-form-control'))).toBe(true);
+    });
+
+    it('never empties a set to refuse a generated class', async ({ page }) => {
+      // The refusal has a floor: an element the page names only by generated classes is
+      // still addressable, because a locator that breaks at the next build beats none.
+      await page.setContent(`<div class="sc-imWYAI"><span class="jLBYtg hUyBqQ"></span></div>`);
+      const { ranked } = await collect(page, 'span.jLBYtg');
+      const collected = ranked.map(entry => entry.selector);
+      expect(collected.length).toBeGreaterThan(0);
+      await assertAllResolve(page, 'span.jLBYtg', collected);
+    });
+
+    it('rescues a deep list item that had only its text', async ({ page }) => {
+      await page.setContent(cards(30));
+      const target = '[data-idx="28"] .card__link';
+      const { selectors, ranked } = await collect(page, target);
+
+      // Before: role-by-name and text, both reading the same string.
+      expect(selectors).toHaveLength(2);
+      const collected = ranked.map(entry => entry.selector);
+      // After: at least one locator that survives that string changing.
+      expect(collected.filter(selector => !selector.includes('Open 28')).length).toBeGreaterThan(0);
+      // Including the scope the instance actually sits in.
+      expect(collected.some(selector => selector.includes('data-idx="28"'))).toBe(true);
+      // And a structural path, the one family that always exists.
+      expect(collected.some(selector => selector.includes('card__body'))).toBe(true);
+      await assertAllResolve(page, target, collected);
+    });
+
+    it('scores a chain below both of its halves', async ({ page }) => {
+      await page.setContent(cards(30));
+      const { ranked } = await collect(page, '[data-idx="28"] .card__input');
+      const chains = ranked.filter(entry => entry.selector.includes(' >> ') || entry.selector.startsWith('div[data-idx'));
+      expect(chains.length).toBeGreaterThan(0);
+      for (const chain of chains) {
+        for (const other of ranked) {
+          if (other === chain || !chain.selector.endsWith(other.selector))
+            continue;
+          expect(chain.score, `${chain.selector} must score worse than its half ${other.selector}`).toBeGreaterThan(other.score);
+        }
+      }
+    });
+
+    it('never anchors a chain on a positional path, body or html', async ({ page }) => {
+      await page.setContent(cards(30));
+      for (const target of ['[data-idx="28"] .card__link', '[data-idx="3"] .card__input']) {
+        const { ranked } = await collect(page, target);
+        for (const { selector } of ranked) {
+          if (!selector.includes('>>'))
+            continue;
+          const anchor = selector.split('>>')[0].trim();
+          expect(anchor, 'anchors name a scope, never a position').not.toMatch(/nth-child|^(body|html)\b/);
+        }
+      }
+    });
+
+    it('never emits two spellings of the same evidence', async ({ page }) => {
+      await page.setContent(`<div><button title="Submit order">Submit order</button></div>`);
+      const { ranked } = await collect(page, 'button');
+      // `[name="X"i]` and `[name="X"s]` match with different strictness but rot together.
+      const evidence = ranked.map(entry => entry.selector.replace(/(["'])[is](?![\w-])/g, '$1'));
+      expect(new Set(evidence).size, `one fact per slot: ${ranked.map(e => e.selector).join(' | ')}`).toBe(evidence.length);
+    });
+
+    it('orders structural paths by depth', async ({ page }) => {
+      // The decoy span keeps the targets off `span >> nth=0`, which cssFallback returns
+      // for the document's first span - a path one level deep is not a depth test.
+      await page.setContent(`
+        <main>
+          <p><span>decoy</span></p>
+          <div class="shallow"><span>alpha</span></div>
+          <div class="wrap"><div><div><span>beta</span></div></div></div>
+        </main>`);
+      const structuralScore = async (target: string) => {
+        const { ranked } = await collect(page, target);
+        return ranked.find(entry => entry.score > 1000000)?.score;
+      };
+      const shallow = await structuralScore('.shallow span');
+      const deep = await structuralScore('.wrap span');
+      expect(shallow).toBeDefined();
+      expect(deep).toBeDefined();
+      expect(deep!, 'a deeper path is more fragile and must score worse').toBeGreaterThan(shallow!);
+    });
+
+    it('honours the budget and never pads a bare element', async ({ page }) => {
+      await page.setContent(cards(30));
+      for (const max of [3, 5, 10, 20]) {
+        const { ranked } = await collect(page, '[data-idx="28"] .card__link', max);
+        expect(ranked.length, `budget ${max}`).toBeLessThanOrEqual(max);
+      }
+      // A span with nothing of its own: a small honest set, not a padded one.
+      await page.setContent(`<div><span></span><span></span><span></span></div>`);
+      const { ranked } = await collect(page, 'span:nth-child(2)', 20);
+      expect(ranked.length).toBeLessThan(5);
+      await assertAllResolve(page, 'span:nth-child(2)', ranked.map(entry => entry.selector));
+    });
+
+    it('is deterministic on an unchanged DOM', async ({ page }) => {
+      await page.setContent(cards(30));
+      const first = await collect(page, '[data-idx="28"] .card__link');
+      const second = await collect(page, '[data-idx="28"] .card__link');
+      expect(second.ranked).toEqual(first.ranked);
+    });
+
+    it('generates within the performance budget', async ({ page }) => {
+      await page.setContent(cards(300));
+      await page.waitForFunction(() => !!(window as any).__injectedScript?.generateSelector);
+      const median = await page.$eval('[data-idx="280"] .card__link', element => {
+        const injected = (window as any).__injectedScript;
+        const options = { multiple: true, testIdAttributeName: 'data-testid', collectSelectors: true };
+        const samples: number[] = [];
+        for (let i = 0; i < 11; i++) {
+          const started = performance.now();
+          injected.generateSelector(element, options);
+          samples.push(performance.now() - started);
+        }
+        return samples.sort((a, b) => a - b)[5];
+      });
+      // Generation runs once per recorded action, on the user's interaction path, next to a
+      // full-page aria snapshot that costs more. Loose enough for a busy CI machine, tight
+      // enough that a quadratic mistake fails here.
+      expect(median, `median in-page generation was ${median.toFixed(1)}ms`).toBeLessThan(150);
+    });
+  });
+
 });

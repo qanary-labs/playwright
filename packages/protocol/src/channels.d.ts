@@ -1617,6 +1617,7 @@ export type BrowserContextEnableRecorderParams = {
   mode?: 'inspecting' | 'recording',
   recorderMode?: 'default' | 'api',
   collectSelectors?: boolean,
+  maxSelectors?: number,
   pauseOnNextStatement?: boolean,
   testIdAttributeName?: string,
   launchOptions?: any,
@@ -1632,6 +1633,7 @@ export type BrowserContextEnableRecorderOptions = {
   mode?: 'inspecting' | 'recording',
   recorderMode?: 'default' | 'api',
   collectSelectors?: boolean,
+  maxSelectors?: number,
   pauseOnNextStatement?: boolean,
   testIdAttributeName?: string,
   launchOptions?: any,
@@ -2410,15 +2412,21 @@ export type FrameAriaSnapshotResult = {
 };
 export type FrameGenerateSelectorsParams = {
   selector: string,
+  maxSelectors?: number,
   timeout: number,
 };
 export type FrameGenerateSelectorsOptions = {
-
+  maxSelectors?: number,
 };
 export type FrameGenerateSelectorsResult = {
-  selector: string,
-  selectors: string[],
-  frameSelectors: string[][],
+  selectors: {
+    selector: string,
+    score: number,
+  }[],
+  frameSelectors: {
+    selector: string,
+    score: number,
+  }[][],
 };
 export type FrameBlurParams = {
   selector: string,

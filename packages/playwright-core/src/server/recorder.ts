@@ -97,6 +97,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
   private _callLogs: CallLog[] = [];
   private _pickLocatorPage: Page | undefined;
   private _collectSelectors: boolean;
+  private _maxSelectors: number | undefined;
 
   static forContext(context: BrowserContext, params: RecorderParams): Promise<Recorder> {
     let recorderPromise = (context as any)[recorderSymbol] as Promise<Recorder>;
@@ -126,6 +127,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
     this._recorderMode = params.recorderMode ?? 'default';
     this.handleSIGINT = params.handleSIGINT;
     this._collectSelectors = !!params.collectSelectors;
+    this._maxSelectors = params.maxSelectors;
 
     this._signalProcessor = new RecorderSignalProcessor({
       addAction: (actionInContext: actions.ActionInContext) => {
@@ -236,7 +238,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
       await this._context.exposeBinding(progress, '__pw_recorderRecordAction',
           (source: BindingSource, action: actions.Action) => this._recordAction(progress, source.frame, action));
 
-      await progress.race(this._context.extendInjectedScript(rawRecorderSource.source, { recorderMode: this._recorderMode, hideToolbar: !!this._params.hideToolbar || this._collectSelectors, collectSelectors: this._collectSelectors }));
+      await progress.race(this._context.extendInjectedScript(rawRecorderSource.source, { recorderMode: this._recorderMode, hideToolbar: !!this._params.hideToolbar || this._collectSelectors, collectSelectors: this._collectSelectors, maxSelectors: this._maxSelectors }));
     });
 
     if (this._debugger.isPaused())
@@ -552,7 +554,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
   }
 
   private async _describeFrame(progress: Progress, frame: Frame): Promise<actions.FrameDescription> {
-    const { framePath, frameSelectors } = await generateFrameSelector(progress, frame);
+    const { framePath, frameSelectors } = await generateFrameSelector(progress, frame, this._maxSelectors);
     const description: actions.FrameDescription = {
       pageGuid: frame._page.guid,
       pageAlias: this._pageAliases.get(frame._page)!,

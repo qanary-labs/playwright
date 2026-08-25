@@ -109,9 +109,9 @@
 
 - **`Locator.generateSelectors()`** — public on-demand selector generation for the element a
   locator strictly resolves to (consumer: zazu's relocate mode, see its
-  `docs/specs/relocate-mode.md`). Returns the same ranked `selector`/`selectors` the recorder
-  emits at capture time, plus `frameSelectors` for elements inside iframes (reuses the
-  recorder's `generateFrameSelector` walk). Generation calls core
+  `docs/specs/relocate-mode.md`). Returns the same scored `selectors` the recorder emits at
+  capture time, plus `frameSelectors` for elements inside iframes (reuses the recorder's
+  `generateFrameSelector` walk). Generation calls core
   `injectedScript.generateSelector` with record mode's exact options (`multiple: true`,
   `collectSelectors: true` — what `recordSelectors: true` hardwires — and the context's
   `testIdAttributeName`), so ranking and interactive-ancestor promotion match a fresh recording
@@ -120,6 +120,92 @@
   `server/frames.ts` (`generateSelectors`), `server/dispatchers/frameDispatcher.ts`,
   `client/locator.ts`, `docs/src/api/class-locator.md` (regenerates `types.d.ts`). Guarded by
   the `generateSelectors` tests (capture parity, frame chain, promotion, strictness) in
+  `tests/library/inspector/recorder-api.spec.ts`.
+
+- **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
+  `PollingRecorder` in every frame (same pattern as `__pw_recorderFlushInferredHovers`), so it
+  exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its
+  `docs/specs/consensus-locator-resolution.md`. One synchronous resolution pass over a step's
+  selectors through `injectedScript.querySelectorAll` — no `await` between them, so all N see
+  the same DOM — returning, per selector, a per-pass ordinal naming the element it matched
+  when it matched exactly one (equal ordinals = same node) and its match count; a selector
+  that matches ≠ 1 element, or fails to parse, names nothing and never throws. Meant to be
+  polled with `waitForFunction`: it returns null until at least one selector resolves uniquely
+  and the agreement pattern — the partition of selector indices into same-node groups, not
+  the nodes themselves, so a keyed re-render still settles — has held for `stableMs`, with
+  the clock kept on `window.__zazuResolve` and keyed by the caller's token so a later step can
+  never inherit an earlier one's stability; `stableMs` 0 returns the current pass
+  unconditionally. Ranking is deliberately not here — everything tunable stays consumer-side.
+  Files: `packages/injected/src/recorder/resolveAll.ts` (new), the `__pw_resolveAll` line in
+  `recorder/pollingRecorder.ts`. Guarded by the four `resolveAll` tests in
+  `tests/library/inspector/recorder-api.spec.ts`.
+
+- **Collected selectors** (`packages/injected/src/selectorCollector.ts`, new file) — an action
+  carries a scored set of selectors, `{selector, score}[]` sorted strongest first, under
+  `selectors`. Upstream's generator
+  enumerates dozens of candidates and keeps exactly one per family, so an element deep in a
+  repeated list came out with two selectors, both derived from its text: change the text and every
+  locator on that step dies at once. Collection keeps what the enumeration already computed, then
+  adds what it structurally cannot produce — a `cssFallback` structural path, stable-attribute CSS
+  (`href` without query or fragment, `name`, `type`, `role`, `alt`, `title`, non-testid `data-*`),
+  a unique class token, and chains (`anchor >> target`) that re-express a unique candidate through
+  a different failure mode.
+
+  **Nothing collected reaches selection.** Every candidate added here is kept out of the
+  `combineScores` comparisons the generator uses to pick the primary, so the injected
+  `generateSelector` still returns byte-for-byte the `selector` and `selectors` it always did —
+  codegen, the inspector and the highlight are untouched. The ~100 upstream cases in
+  `tests/library/selector-generator.spec.ts` are the guard: they pin the primary for that many
+  DOM shapes and must stay green untouched.
+
+  **The engine's names stop at the injected boundary.** Inside `selectorGenerator.ts` the scored
+  set is `rankedSelectors`, sitting next to upstream's unscored `selectors`. Everything the fork
+  exposes — `actions.ActionWithSelector`, the `recorderaction` payload,
+  `Locator.generateSelectors()`, the protocol — carries the scored set as `selectors` and no
+  unscored list at all, so one name means one thing from capture through to a consumer's storage.
+  The payload also names no primary: `selectors[0]` is the strongest entry and picking it is the
+  consumer's decision, while the engine's own pick (`action.selector`) stays internal, where
+  codegen and role/text metadata still read it. Consequences of dropping the unscored list: the
+  inspector's own tools (`RecordActionTool`, `InspectTool` — the path taken when
+  `collectSelectors` is off) no longer attach any list to their actions, so `--target=json`
+  codegen output no longer carries `selectors`; text expectations (`assertText`,
+  `assertSnapshot`) carry an empty set, since the generator deliberately collects nothing for
+  them.
+
+  Each entry carries Playwright's own engine `score` (lower is stronger), not a new scale. That
+  choice removes a tuning surface rather than adding one, and it comes with the arithmetic for
+  free: `combineScores` sums `score_i × (len − i)`, so a chain always scores worse than both of
+  its halves, with the anchor dominating — the "a chain is worth its weakest link" rule needs no
+  implementation. The one number added is a depth term on structural paths
+  (`kCSSFallbackScore + depth × 1000`), applied to the *emitted* score only, because every
+  `cssFallback` path otherwise scores an identical `10⁷` and the family collection produces most
+  of would be internally indistinguishable. Read the scale as ordinal: it orders families, it does
+  not measure how much better one is than another, so turning a score into vote mass is the
+  consumer's job (see zazu's consensus spec).
+
+  What keeps the set from being one locator repeated: chains anchor only on ancestors that name a
+  *scope* — never `body`/`html`, never an ancestor whose own best selector is positional (that
+  re-states the structural path already emitted, one token longer) — at most two anchors per
+  candidate walking nearest-first, at most two chains per anchor, one chain per
+  (anchor element, target candidate) pair, and chains interleaved so each target candidate places
+  its best before any places its second. Normalized and exact spellings of one fact
+  (`[name="X"i]` vs `[name="X"s]`) collapse to one slot.
+
+  Frame hops get the same treatment: `generateFrameSelector` runs the collector on each iframe of
+  the chain, so `frameSelectors` is `{selector, score}[][]` (one scored set per hop, outermost
+  first) instead of `string[][]` — the same shape as `selectors`. Its 2s-race fallback (`iframe[name=…]`/`iframe[src=…]`)
+  is scored last-resort, because the engine never inspected it.
+
+  Budget: `recordSelectors: { max }` on the context (default 10), plumbed to
+  `locator.generateSelectors({ maxSelectors })` and to each frame hop with the same default so a
+  relocated step matches a fresh recording. Payload: `RecorderActionPayload.selectors`. Full design and rationale:
+  zazu's `docs/specs/weighted-locator-generation.md`. Files: `selectorCollector.ts` (all policy),
+  thin hooks in `selectorGenerator.ts`, `recorder/recorder.ts` (api-mode capture sites),
+  `recorder/pollingRecorder.ts`, `recorder/src/actions.d.ts`, `client/browserContext.ts`,
+  `client/locator.ts`, `client/types.ts`, `server/frames.ts`, `server/recorder.ts`,
+  `server/dispatchers/frameDispatcher.ts`, `server/recorder/recorderUtils.ts` (frame hops),
+  protocol `browserContext.yml`/`frame.yml`, and the two API docs. Guarded by the `collected selectors` block in
+  `tests/library/selector-generator.spec.ts` plus three payload/API tests in
   `tests/library/inspector/recorder-api.spec.ts`.
 
 - **Covered-target substitution inside `click`** — the fork's one change to what `click` may

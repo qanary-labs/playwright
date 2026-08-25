@@ -178,7 +178,6 @@ class InspectTool implements RecorderTool {
       void this._recorder.recordAction({
         name: 'assertVisible',
         selector,
-        selectors: model.selectors,
         signals: [],
       });
       this._recorder.setMode('recording');
@@ -276,7 +275,6 @@ class RecordActionTool implements RecorderTool {
       this._performAction({
         name: checkbox.checked ? 'check' : 'uncheck',
         selector: this._hoveredModel!.selector,
-        selectors: this._hoveredModel!.selectors,
         signals: [],
       });
       return;
@@ -290,7 +288,6 @@ class RecordActionTool implements RecorderTool {
         action: {
           name: 'click',
           selector: this._hoveredModel!.selector,
-          selectors: this._hoveredModel!.selectors,
           position: positionForEvent(event),
           signals: [],
           button: buttonForEvent(event),
@@ -320,7 +317,6 @@ class RecordActionTool implements RecorderTool {
     this._performAction({
       name: 'click',
       selector: this._hoveredModel!.selector,
-      selectors: this._hoveredModel!.selectors,
       position: positionForEvent(event),
       signals: [],
       button: buttonForEvent(event),
@@ -426,7 +422,6 @@ class RecordActionTool implements RecorderTool {
       this._recordAction({
         name: 'setInputFiles',
         selector: this._activeModel!.selector,
-        selectors: this._activeModel!.selectors,
         signals: [],
         files: [...((target as HTMLInputElement).files || [])].map(file => file.name),
       });
@@ -438,7 +433,6 @@ class RecordActionTool implements RecorderTool {
         name: 'fill',
         // must use hoveredModel instead of activeModel for it to work in webkit
         selector: this._hoveredModel!.selector,
-        selectors: this._hoveredModel!.selectors,
         signals: [],
         text: target.value,
         sensitive: false,
@@ -458,7 +452,6 @@ class RecordActionTool implements RecorderTool {
       this._recordAction({
         name: 'fill',
         selector: this._activeModel!.selector,
-        selectors: this._activeModel!.selectors,
         signals: [],
         text: target.isContentEditable ? target.innerText : (target as HTMLInputElement).value,
         sensitive: isSensitiveInput(target),
@@ -470,7 +463,6 @@ class RecordActionTool implements RecorderTool {
       this._recordAction({
         name: 'select',
         selector: this._activeModel!.selector,
-        selectors: this._activeModel!.selectors,
         options: [...selectElement.selectedOptions].map(option => option.value),
         displayValue: [...selectElement.selectedOptions].map(option => option.label || option.text).join(', '),
         signals: [],
@@ -496,7 +488,6 @@ class RecordActionTool implements RecorderTool {
         this._performAction({
           name: checkbox.checked ? 'uncheck' : 'check',
           selector: this._activeModel!.selector,
-          selectors: this._activeModel!.selectors,
           signals: [],
         });
         return;
@@ -506,7 +497,6 @@ class RecordActionTool implements RecorderTool {
     this._performAction({
       name: 'press',
       selector: this._activeModel!.selector,
-      selectors: this._activeModel!.selectors,
       signals: [],
       key: event.key,
       modifiers: modifiersForEvent(event),
@@ -542,7 +532,6 @@ class RecordActionTool implements RecorderTool {
         cb: () => this._performAction({
           name: 'click',
           selector: model.selector,
-          selectors: model.selectors,
           position: actionPosition,
           signals: [],
           button: 'left',
@@ -555,7 +544,6 @@ class RecordActionTool implements RecorderTool {
         cb: () => this._performAction({
           name: 'click',
           selector: model.selector,
-          selectors: model.selectors,
           position: actionPosition,
           signals: [],
           button: 'right',
@@ -568,7 +556,6 @@ class RecordActionTool implements RecorderTool {
         cb: () => this._performAction({
           name: 'click',
           selector: model.selector,
-          selectors: model.selectors,
           position: actionPosition,
           signals: [],
           button: 'left',
@@ -581,7 +568,6 @@ class RecordActionTool implements RecorderTool {
         cb: () => this._performAction({
           name: 'hover',
           selector: model.selector,
-          selectors: model.selectors,
           position: actionPosition,
           signals: [],
         }),
@@ -695,16 +681,13 @@ class RecordActionTool implements RecorderTool {
 
   private _recordAction(action: actions.Action) {
     const actionWithSelector = action as actions.ActionWithSelector;
-    if (actionWithSelector.selector && !actionWithSelector.selectors) {
-      const selectors = this._activeModel?.selectors || this._hoveredModel?.selectors;
-      if (selectors) {
-        actionWithSelector.selectors = selectors;
-      } else if (this._recorder.collectSelectors()) {
-        const element = this._elementForSelector(actionWithSelector.selector);
-        if (element) {
-          const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName });
-          actionWithSelector.selectors = generated.selectors;
-        }
+    // The highlight models carry upstream's unscored shortlist, so an action recorded
+    // here while collecting regenerates to get the scored set the API contract promises.
+    if (actionWithSelector.selector && !actionWithSelector.selectors && this._recorder.collectSelectors()) {
+      const element = this._elementForSelector(actionWithSelector.selector);
+      if (element) {
+        const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName });
+        actionWithSelector.selectors = generated.rankedSelectors;
       }
     }
     void this._recorder.recordAction(action).then(() => this._reportPerformedActionForTests());
@@ -1133,12 +1116,14 @@ class JsonRecordActionTool implements RecorderTool {
     return false;
   }
 
-  private _ariaSnapshot(element: HTMLElement): { ariaSnapshot: string, selector: string, selectors?: string[], ref?: string, retargeted?: HTMLElement };
-  private _ariaSnapshot(element: HTMLElement | undefined): { ariaSnapshot: string, selector?: string, selectors?: string[], ref?: string, retargeted?: HTMLElement } {
+  private _ariaSnapshot(element: HTMLElement): { ariaSnapshot: string, selector: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement };
+  private _ariaSnapshot(element: HTMLElement | undefined): { ariaSnapshot: string, selector?: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement } {
     const { ariaSnapshot, refs } = this._recorder.injectedScript.ariaSnapshotForRecorder();
     const ref = element ? refs.get(element) : undefined;
     const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName }) : undefined;
-    return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.selectors, ref, retargeted: elementInfo?.elements?.[0] as HTMLElement | undefined };
+    // The generator keeps upstream's names - `selectors` is its unscored shortlist. An
+    // action carries the scored set instead, under the name the recorder API exposes.
+    return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.rankedSelectors, ref, retargeted: elementInfo?.elements?.[0] as HTMLElement | undefined };
   }
 
   // Record where on the recorded element the click landed, as a ratio (each
@@ -1296,12 +1281,12 @@ class TextAssertionTool implements RecorderTool {
     if (this._kind === 'value') {
       if (!this._elementHasValue(target))
         return null;
-      const { selector, selectors } = this._recorder.generateSelector(target, { testIdAttributeName: this._recorder.state.testIdAttributeName });
+      const { selector, rankedSelectors } = this._recorder.generateSelector(target, { testIdAttributeName: this._recorder.state.testIdAttributeName });
       if (target.nodeName === 'INPUT' && ['checkbox', 'radio'].includes((target as HTMLInputElement).type.toLowerCase())) {
         return {
           name: 'assertChecked',
           selector,
-          selectors,
+          selectors: rankedSelectors,
           signals: [],
           // Interestingly, inputElement.checked is reversed inside this event handler.
           checked: !(target as HTMLInputElement).checked,
@@ -1310,7 +1295,7 @@ class TextAssertionTool implements RecorderTool {
         return {
           name: 'assertValue',
           selector,
-          selectors,
+          selectors: rankedSelectors,
           signals: [],
           value: (target as (HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)).value,
         };
@@ -1324,7 +1309,6 @@ class TextAssertionTool implements RecorderTool {
       return {
         name: 'assertSnapshot',
         selector: this._hoverHighlight.selector,
-        selectors: this._hoverHighlight.selectors,
         signals: [],
         ariaSnapshot: this._recorder.injectedScript.ariaSnapshot(target, { mode: 'codegen' }),
       };
@@ -1337,7 +1321,6 @@ class TextAssertionTool implements RecorderTool {
       return {
         name: 'assertText',
         selector: this._hoverHighlight.selector,
-        selectors: this._hoverHighlight.selectors,
         signals: [],
         text: this._recorder.injectedScript.utils.elementText(this._textCache, target).normalized,
         substring: true,
@@ -1660,11 +1643,13 @@ export class Recorder {
   readonly document: Document;
   private _delegate: RecorderDelegate = {};
   private _collectSelectors: boolean;
+  private _maxSelectors: number | undefined;
 
-  constructor(injectedScript: InjectedScript, options?: { recorderMode?: 'default' | 'api', hideToolbar?: boolean, collectSelectors?: boolean }) {
+  constructor(injectedScript: InjectedScript, options?: { recorderMode?: 'default' | 'api', hideToolbar?: boolean, collectSelectors?: boolean, maxSelectors?: number }) {
     this.document = injectedScript.document;
     this.injectedScript = injectedScript;
     this._collectSelectors = !!options?.collectSelectors;
+    this._maxSelectors = options?.maxSelectors;
     this.highlight = injectedScript.createHighlight();
     this._tools = {
       'none': new NoneTool(),
@@ -1747,6 +1732,7 @@ export class Recorder {
       testIdAttributeName: this.state.testIdAttributeName,
       multiple: true,
       collectSelectors: this.collectSelectors(),
+      maxSelectors: this._maxSelectors,
       ...options,
     };
     return this.injectedScript.generateSelector(element, finalOptions);

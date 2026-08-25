@@ -15,9 +15,11 @@
  */
 
 import { Recorder } from './recorder';
+import { resolveAll } from './resolveAll';
 
 import type { InjectedScript } from '../injectedScript';
 import type { RecorderDelegate } from './recorder';
+import type { ResolvePass } from './resolveAll';
 import type * as actions from '@recorder/actions';
 import type { ElementInfo, Mode, OverlayState, UIState } from '@recorder/recorderTypes';
 
@@ -35,6 +37,9 @@ interface Embedder {
   __pw_recorderFlushInferredHovers(): Promise<void>;
   // Diagnostic: JSON-safe snapshot of the hover inference engine state.
   __pw_recorderHoverDebug(): unknown;
+  // Set by PollingRecorder in every frame for the embedder to poll: one atomic
+  // resolution pass over a step's selectors (see resolveAll.ts).
+  __pw_resolveAll(selectors: string[], stableMs: number, token: string): ResolvePass | null;
 }
 
 export class PollingRecorder implements RecorderDelegate {
@@ -43,7 +48,7 @@ export class PollingRecorder implements RecorderDelegate {
   private _pollRecorderModeTimer: number | undefined;
   private _lastStateJSON: string | undefined;
 
-  constructor(injectedScript: InjectedScript, options?: { recorderMode?: 'default' | 'api', hideToolbar?: boolean, collectSelectors?: boolean }) {
+  constructor(injectedScript: InjectedScript, options?: { recorderMode?: 'default' | 'api', hideToolbar?: boolean, collectSelectors?: boolean, maxSelectors?: number }) {
     this._recorder = new Recorder(injectedScript, options);
     this._embedder = injectedScript.window as any;
 
@@ -56,6 +61,7 @@ export class PollingRecorder implements RecorderDelegate {
     this._embedder.__pw_refreshOverlay = refreshOverlay;
     this._embedder.__pw_recorderFlushInferredHovers = () => this._recorder.flushInferredHovers();
     this._embedder.__pw_recorderHoverDebug = () => this._recorder.hoverInferenceDebugState();
+    this._embedder.__pw_resolveAll = (selectors, stableMs, token) => resolveAll(injectedScript, selectors, stableMs, token);
     refreshOverlay();
   }
 

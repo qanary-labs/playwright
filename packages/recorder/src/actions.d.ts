@@ -41,9 +41,18 @@ export type ActionBase = {
   preconditionSelector?: string,
 };
 
+export type RankedSelector = {
+  selector: string,
+  // Playwright's own engine score: lower is stronger. Ordinal, comparable within one
+  // action only. See zazu's docs/specs/weighted-locator-generation.md.
+  score: number,
+};
+
 export type ActionWithSelector = ActionBase & {
   selector: string,
-  selectors?: string[],
+  // The scored candidate set for the element, strongest first. Undefined when the
+  // recorder was started without selector collection.
+  selectors?: RankedSelector[],
   submitter?: boolean,
   formId?: string,
   isInForm?: boolean,
@@ -178,7 +187,8 @@ export type FrameDescription = {
   pageGuid: string;
   pageAlias: string;
   framePath: string[];
-  frameSelectors?: string[][];
+  // One scored candidate set per iframe of the chain, outermost first (Qanary fork).
+  frameSelectors?: RankedSelector[][];
 };
 
 export type ActionInContext = {

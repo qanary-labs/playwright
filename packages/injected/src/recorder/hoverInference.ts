@@ -56,7 +56,7 @@ type Candidate = {
   // Captured at candidate creation: by confirmation time the DOM has changed
   // (menu open, aria-expanded flipped) and selectors could differ.
   selector: string;
-  selectors?: string[];
+  selectors?: actions.RankedSelector[];
   // Roots of content that became visible while the pointer was over `element`.
   // The mount parent is remembered so a root replaced wholesale (AJAX menus
   // swapping their loader for the rendered template) can fall back to its
@@ -402,7 +402,7 @@ export class HoverInferenceEngine {
     const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName });
     if (!generated.selector)
       return null;
-    const candidate: Candidate = { element, selector: generated.selector, selectors: generated.selectors, revealed: [], hadReveal: false };
+    const candidate: Candidate = { element, selector: generated.selector, selectors: generated.rankedSelectors, revealed: [], hadReveal: false };
     this._candidates.push(candidate);
     return candidate;
   }

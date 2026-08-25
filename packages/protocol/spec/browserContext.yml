@@ -221,6 +221,7 @@ BrowserContext:
           - default
           - api
         collectSelectors: boolean?
+        maxSelectors: int?
         pauseOnNextStatement: boolean?
         testIdAttributeName: string?
         launchOptions: json?
