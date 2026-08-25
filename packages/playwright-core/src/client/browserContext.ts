@@ -192,6 +192,7 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       mode: 'recording',
       recorderMode: 'api',
       collectSelectors: true,
+      maxSelectors: typeof recordSelectors === 'object' ? recordSelectors.max : undefined,
     }, {
       actionAdded: (page: Page, actionInContext: actions.ActionInContext, code: string) => {
         this._emitRecorderAction(page, actionInContext, code);
@@ -216,14 +217,17 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     const action = actionInContext.action as actions.ActionWithSelector;
     if (!action.selector)
       return null;
-    const metadata = this._metadataFromSelectors(action.selector, action.selectors || []);
+    const selectors = action.selectors || [];
+    // Role and text scan the engine's own primary first, then the scored set. The set is
+    // sorted by score and a chain always scores above the bare candidate it wraps, so the
+    // scan still meets a plain `internal:role=` token before any anchored one.
+    const metadata = this._metadataFromSelectors(action.selector, selectors.map(entry => entry.selector));
     const value = this._actionValue(actionInContext.action as actions.Action);
     const sensitive = this._actionSensitive(actionInContext.action as actions.Action);
     const selectAction = action.name === 'select' ? action as actions.SelectAction : null;
     const result: Record<string, any> = {
       action: action.name,
-      selector: action.selector,
-      selectors: action.selectors || [],
+      selectors,
       role: metadata.role,
       text: metadata.text,
       sensitive: sensitive,

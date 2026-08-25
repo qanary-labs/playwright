@@ -643,8 +643,9 @@ test('should surface the inferred flag on the recorderaction payload', async ({ 
   // Locks in the client layer: _simplifyRecordedAction (browserContext.ts) must
   // carry `inferred` into the flattened RecorderActionPayload consumers see.
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
-  const events: { action: string, inferred?: boolean }[] = [];
-  recordedContext.on('recorderaction' as any, (payload: { action: string, inferred?: boolean }) => events.push(payload));
+  type Payload = { action: string, inferred?: boolean, selectors: { selector: string, score: number }[] };
+  const events: Payload[] = [];
+  recordedContext.on('recorderaction' as any, (payload: Payload) => events.push(payload));
 
   const page = await recordedContext.newPage();
   await page.setContent(`
@@ -658,6 +659,10 @@ test('should surface the inferred flag on the recorderaction payload', async ({ 
   await expect.poll(() => events.map(e => e.action)).toEqual(['hover', 'click']);
   expect(events[0].inferred).toBe(true);
   expect(events[1].inferred).toBeUndefined();
+  // An inferred hover is built from a Candidate captured when the reveal happened, not
+  // from the capture path every other action takes, so its scored set needs its own guard.
+  expect(events[0].selectors[0].selector).toBe('internal:role=button[name="Products"i]');
+  expect(events[0].selectors.length).toBeGreaterThan(1);
   await recordedContext.close();
 });
 

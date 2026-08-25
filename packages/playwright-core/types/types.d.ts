@@ -10586,11 +10586,20 @@ export interface Browser {
 
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
-     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
-     * the selectors in your own tooling.
+     * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
+     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * selectors in your own tooling.
+     *
+     * Pass `true` for the defaults, or an object to set the collection budget.
      */
-    recordSelectors?: boolean;
+    recordSelectors?: boolean|{
+      /**
+       * How many selectors
+       * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors)
+       * may carry per action. Defaults to `10`.
+       */
+      max?: number;
+    };
 
     /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
@@ -14061,26 +14070,49 @@ export interface Locator {
    * **Usage**
    *
    * ```js
-   * const { selector, selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
+   * const { selectors, frameSelectors } = await page.locator('#submit').generateSelectors();
    * ```
    *
+   * @param options
    */
-  generateSelectors(): Promise<{
+  generateSelectors(options?: {
     /**
-     * Best-ranked selector, equal to the first entry of `selectors`.
+     * How many selectors `selectors` may carry. Defaults to 10, matching what the recorder collects at capture time, so a
+     * relocated step matches a freshly-recorded one.
      */
-    selector: string;
+    maxSelectors?: number;
+  }): Promise<{
+    /**
+     * The scored set the recorder collects at capture time, sorted strongest first.
+     */
+    selectors: Array<{
+      /**
+       * Selector expression.
+       */
+      selector: string;
+
+      /**
+       * Playwright's engine score for it — **lower is stronger**. Ordinal, and only comparable between selectors of the
+       * same element.
+       */
+      score: number;
+    }>;
 
     /**
-     * Ranked selector expressions, best first — the same lists the recorder emits at capture time.
+     * One scored candidate set per iframe of the element's frame chain, outermost first — same shape and score scale as
+     * `selectors`. Empty for elements in the main frame.
      */
-    selectors: Array<string>;
+    frameSelectors: Array<Array<{
+      /**
+       * Selector expression for that iframe element.
+       */
+      selector: string;
 
-    /**
-     * Ranked frame selectors per iframe of the element's frame chain, outermost first. Empty for elements in the main
-     * frame.
-     */
-    frameSelectors: Array<Array<string>>;
+      /**
+       * Playwright's engine score for it — **lower is stronger**.
+       */
+      score: number;
+    }>>;
   }>;
 
   /**
@@ -16026,11 +16058,20 @@ export interface BrowserType<Unused = {}> {
 
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
-     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
-     * the selectors in your own tooling.
+     * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
+     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * selectors in your own tooling.
+     *
+     * Pass `true` for the defaults, or an object to set the collection budget.
      */
-    recordSelectors?: boolean;
+    recordSelectors?: boolean|{
+      /**
+       * How many selectors
+       * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors)
+       * may carry per action. Defaults to `10`.
+       */
+      max?: number;
+    };
 
     /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
@@ -20659,11 +20700,22 @@ export interface RecorderActionPayload {
   formId: string;
 
   /**
-   * Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is an
-   * array of selectors ranked from best to worst for the corresponding iframe element. Only present when the target
-   * element is inside an iframe.
+   * Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is the
+   * scored candidate set for the corresponding iframe element, sorted strongest first — same shape and score scale as
+   * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors).
+   * Only present when the target element is inside an iframe.
    */
-  frameSelectors: Array<Array<string>>;
+  frameSelectors: Array<Array<{
+    /**
+     * Selector expression for that iframe element.
+     */
+    selector: string;
+
+    /**
+     * Playwright's engine score for it — **lower is stronger**.
+     */
+    score: number;
+  }>>;
 
   /**
    * Present and `true` on `'hover'` actions produced by the hover inference engine: the hover was not an explicit
@@ -20698,14 +20750,23 @@ export interface RecorderActionPayload {
   role: string;
 
   /**
-   * The primary selector Playwright generated for the element.
+   * Every selector collected for the element, sorted strongest first. Each one resolves to the target element alone at
+   * capture time, so the first entry is the one to lead with and the rest are fallbacks that fail differently — a test
+   * id, an accessible name, a stable attribute, a structural path. Consumers pick their own primary from this list;
+   * Playwright does not name one.
+   *
+   * `score` is Playwright's own engine score for the selector, on its existing scale where **lower is stronger** (a
+   * test id scores `1`, a role-with-name around `100`, a positional fallback path in the millions). Treat it as ordinal
+   * and comparable only between selectors of the same action: the scale orders selector families, it does not measure
+   * how much better one is than another. Empty for actions that replay without an element, such as `'press'`, and for
+   * text expectations (`'assertText'`, `'assertSnapshot'`), where the generator deliberately produces a single selector
+   * that is not required to resolve to one element.
    */
-  selector: string;
+  selectors: Array<{
+    selector: string;
 
-  /**
-   * Additional selectors ranked from best to worst. May be empty.
-   */
-  selectors: Array<string>;
+    score: number;
+  }>;
 
   /**
    * Value recorded for value-carrying actions considered sensitive or not, based on input type (eg. `password` or not).
@@ -23123,11 +23184,20 @@ export interface AndroidDevice {
 
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
-     * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-     * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
-     * the selectors in your own tooling.
+     * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
+     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * selectors in your own tooling.
+     *
+     * Pass `true` for the defaults, or an object to set the collection budget.
      */
-    recordSelectors?: boolean;
+    recordSelectors?: boolean|{
+      /**
+       * How many selectors
+       * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors)
+       * may carry per action. Defaults to `10`.
+       */
+      max?: number;
+    };
 
     /**
      * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.
@@ -24306,11 +24376,20 @@ export interface BrowserContextOptions {
 
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
-   * captured and Playwright emits the `recorderaction` event with `{ action, selector, selectors, role, text, value,
-   * sensitive, submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume
-   * the selectors in your own tooling.
+   * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
+   * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+   * selectors in your own tooling.
+   *
+   * Pass `true` for the defaults, or an object to set the collection budget.
    */
-  recordSelectors?: boolean;
+  recordSelectors?: boolean|{
+    /**
+     * How many selectors
+     * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors)
+     * may carry per action. Defaults to `10`.
+     */
+    max?: number;
+  };
 
   /**
    * Enables video recording for all pages into `recordVideo.dir` directory. If not specified videos are not recorded.

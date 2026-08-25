@@ -26,6 +26,12 @@ import type * as actions from '@recorder/actions';
 import type { CallLog, CallLogStatus } from '@recorder/recorderTypes';
 import type { Progress } from '@protocol/progress';
 
+type RankedSelector = actions.RankedSelector;
+
+// `kCSSFallbackScore` in the injected selector generator, restated here because server
+// code cannot import from the injected bundle. Only the fallback below uses it.
+const kUnverifiedFrameScore = 10000000;
+
 export function buildFullSelector(framePath: string[], selector: string) {
   return [...framePath, selector].join(' >> internal:control=enter-frame >> ');
 }
@@ -117,14 +123,17 @@ export function collapseActions(actions: actions.ActionInContext[]): actions.Act
   return result;
 }
 
-export async function generateFrameSelector(progress: Progress, frame: Frame): Promise<{ framePath: string[], frameSelectors: string[][] }> {
-  const selectorPromises: Promise<{ selector: string, selectors: string[] }>[] = [];
+// Qanary fork: a frame hop carries the same scored candidates an element does
+// (weighted-locator-generation spec) - one entry per iframe of the chain, outermost
+// first, each entry the collected set for that iframe with the same score scale.
+export async function generateFrameSelector(progress: Progress, frame: Frame, maxSelectors?: number): Promise<{ framePath: string[], frameSelectors: RankedSelector[][] }> {
+  const selectorPromises: Promise<{ selector: string, rankedSelectors: RankedSelector[] }>[] = [];
   progress.setAllowConcurrentOrNestedRaces(true);
   while (frame) {
     const parent = frame.parentFrame();
     if (!parent)
       break;
-    selectorPromises.push(generateFrameSelectorInParent(progress, parent, frame));
+    selectorPromises.push(generateFrameSelectorInParent(progress, parent, frame, maxSelectors));
     frame = parent;
   }
   const results = await Promise.all(selectorPromises);
@@ -132,11 +141,11 @@ export async function generateFrameSelector(progress: Progress, frame: Frame): P
   results.reverse();
   return {
     framePath: results.map(r => r.selector),
-    frameSelectors: results.map(r => r.selectors),
+    frameSelectors: results.map(r => r.rankedSelectors),
   };
 }
 
-async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, frame: Frame): Promise<{ selector: string, selectors: string[] }> {
+async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, frame: Frame, maxSelectors?: number): Promise<{ selector: string, rankedSelectors: RankedSelector[] }> {
   const result = await raceAgainstDeadline(async () => {
     try {
       const frameElement = await frame.frameElement(prgoress);
@@ -144,19 +153,24 @@ async function generateFrameSelectorInParent(prgoress: Progress, parent: Frame, 
         return;
       const utility = await parent.utilityContext();
       const injected = await utility.injectedScript();
-      const generated = await injected.evaluate((injected, element) => {
-        const result = injected.generateSelector(element as Element, { testIdAttributeName: 'data-testid', multiple: true });
-        return { selector: result.selector, selectors: result.selectors };
-      }, frameElement);
+      const generated = await injected.evaluate((injected, { element, maxSelectors }) => {
+        const result = injected.generateSelector(element as Element, { testIdAttributeName: 'data-testid', multiple: true, collectSelectors: true, maxSelectors });
+        return { selector: result.selector, rankedSelectors: result.rankedSelectors };
+      }, { element: frameElement, maxSelectors });
       return generated;
     } catch (e) {
     }
   }, monotonicTime() + 2000);
   if (!result.timedOut && result.result)
-    return { selector: result.result.selector, selectors: result.result.selectors };
+    return result.result;
 
+  // The engine never ran here - the race timed out, or the frame element was already
+  // gone - so this string is reconstructed from the frame itself rather than inspected.
+  // It is scored last-resort for exactly that reason: an unverified candidate must not
+  // outrank evidence the engine actually verified, and a url-derived `src` is as likely
+  // to carry a session token as it is to be stable.
   const fallback = frame.name()
     ? `iframe[name=${quoteCSSAttributeValue(frame.name())}]`
     : `iframe[src=${quoteCSSAttributeValue(frame.url())}]`;
-  return { selector: fallback, selectors: [fallback] };
+  return { selector: fallback, rankedSelectors: [{ selector: fallback, score: kUnverifiedFrameScore }] };
 }

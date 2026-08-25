@@ -18,9 +18,11 @@ import { escapeForAttributeSelector, escapeForTextSelector, escapeRegExp, quoteC
 
 import { beginDOMCaches, closestCrossShadow, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost } from './domUtils';
 import { beginAriaCaches, endAriaCaches, getAriaRole, getElementAccessibleDescription, getElementAccessibleName } from './roleUtils';
+import { kMaxAnchorAncestors, kMaxAnchorsPerCandidate, SelectorCollector } from './selectorCollector';
 import { elementText, getElementLabels } from './selectorUtils';
 
 import type { InjectedScript } from './injectedScript';
+import type { CollectedSelector } from './selectorCollector';
 
 type SelectorToken = {
   engine: string;
@@ -73,20 +75,26 @@ export type GenerateSelectorOptions = {
   forTextExpect?: boolean;
   multiple?: boolean;
   collectSelectors?: boolean;
+  // Qanary fork: how many selectors collection may emit (see selectorCollector.ts).
+  maxSelectors?: number;
 };
 
 export type SelectorSuggestionType = 'role' | 'label' | 'text' | 'testId' | 'attr' | 'css' | 'cssNoId';
 
-export function generateSelector(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): { selector: string, selectors: string[], elements: Element[] } {
+export function generateSelector(injectedScript: InjectedScript, targetElement: Element, options: GenerateSelectorOptions): { selector: string, selectors: string[], rankedSelectors: CollectedSelector[], elements: Element[] } {
   injectedScript._evaluator.begin();
   const cache: Cache = { allowText: new Map(), disallowText: new Map() };
   beginAriaCaches();
   beginDOMCaches();
   try {
     const suggestionStore = options.collectSelectors ? new Map<SelectorSuggestionType, { tokens: SelectorToken[], score: number }>() : null;
+    // Qanary fork: the wider, scored set. Text expectations deliberately emit a single
+    // selector, so they are not collected for.
+    const collector = options.collectSelectors && !options.forTextExpect ? new SelectorCollector(options.maxSelectors, joinTokens, combineScores) : null;
     const considerSuggestion = (tokens: SelectorToken[] | null) => {
       if (!suggestionStore || !tokens)
         return;
+      collector?.add(tokens);
       const type = classifyTokens(tokens);
       if (!type)
         return;
@@ -119,8 +127,8 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
           targetElement = interactiveParent;
       }
       if (options.multiple) {
-        const withText = generateSelectorFor(cache, injectedScript, targetElement, options, considerSuggestion);
-        const withoutText = generateSelectorFor(cache, injectedScript, targetElement, { ...options, noText: true }, considerSuggestion);
+        const withText = generateSelectorFor(cache, injectedScript, targetElement, options, considerSuggestion, collector);
+        const withoutText = generateSelectorFor(cache, injectedScript, targetElement, { ...options, noText: true }, considerSuggestion, collector);
         let tokens = [withText, withoutText];
 
         // Clear cache to re-generate without css id.
@@ -142,13 +150,14 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
         tokens.forEach(considerSuggestion);
         selectors = [...new Set(tokens.map(t => joinTokens(t!)))];
       } else {
-        const targetTokens = generateSelectorFor(cache, injectedScript, targetElement, options, considerSuggestion) || cssFallback(injectedScript, targetElement, options);
+        const targetTokens = generateSelectorFor(cache, injectedScript, targetElement, options, considerSuggestion, collector) || cssFallback(injectedScript, targetElement, options);
         considerSuggestion(targetTokens);
         selectors = [joinTokens(targetTokens)];
       }
     }
     const selector = selectors[0];
     const parsedSelector = injectedScript.parseSelector(selector);
+    let rankedSelectors: CollectedSelector[] = [];
     if (suggestionStore) {
       const root = options.root ?? targetElement.ownerDocument;
       const resolvesToTarget = (sel: string) => {
@@ -163,10 +172,28 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
       }
       // Always keep the canonical primary selector, even if it disambiguates with nth.
       selectors = [selector, ...[...allSelectors].filter(s => s !== selector)];
+      if (collector) {
+        // Qanary fork: candidates the enumeration has no notion of - a structural path,
+        // stable attributes, a unique class. Collect-only: they are added after every
+        // selection decision has been made, so they cannot move the primary.
+        collector.addCollectOnlyCandidates(injectedScript, targetElement, options.root);
+        collector.add(cssFallback(injectedScript, targetElement, options));
+        collector.add(cssFallback(injectedScript, targetElement, { ...options, noCSSId: true }));
+        rankedSelectors = collector.build(sel => {
+          // A collected candidate that will not parse is dropped, never fatal: it is
+          // extra information, and the primary must not depend on it.
+          try {
+            return resolvesToTarget(sel);
+          } catch {
+            return false;
+          }
+        }, selectors);
+      }
     }
     return {
       selector,
       selectors,
+      rankedSelectors,
       elements: injectedScript.querySelectorAll(parsedSelector, options.root ?? targetElement.ownerDocument)
     };
   } finally {
@@ -178,7 +205,7 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
 
 type InternalOptions = GenerateSelectorOptions & { noText?: boolean, noCSSId?: boolean, isRecursive?: boolean };
 
-function generateSelectorFor(cache: Cache, injectedScript: InjectedScript, targetElement: Element, options: InternalOptions, onSuggestion?: (tokens: SelectorToken[]) => void): SelectorToken[] | null {
+function generateSelectorFor(cache: Cache, injectedScript: InjectedScript, targetElement: Element, options: InternalOptions, onSuggestion?: (tokens: SelectorToken[]) => void, collector?: SelectorCollector | null): SelectorToken[] | null {
   if (options.root && !isInsideScope(options.root, targetElement))
     throw new Error(`Target element must belong to the root's subtree`);
 
@@ -217,6 +244,11 @@ function generateSelectorFor(cache: Cache, injectedScript: InjectedScript, targe
       onSuggestion?.(candidate);
       if (!options.collectSelectors)
         break;
+      // Qanary fork: a unique candidate still walks its ancestors when collecting, to
+      // re-express itself through a different failure mode. Those chains never reach
+      // updateResult, so the primary selector is unaffected (selectorCollector.ts).
+      if (collector && !options.isRecursive)
+        collectChainsForCandidate(cache, injectedScript, targetElement, options, candidate, collector);
       // When collecting suggestions, continue to gather other candidate types.
       continue;
     }
@@ -268,6 +300,34 @@ function generateSelectorFor(cache: Cache, injectedScript: InjectedScript, targe
     }
   }
   return result;
+}
+
+// Qanary fork, collect-only: chains an already-unique candidate under its nearest
+// ancestors, so the emitted set holds locators that do not all break together. Anchors
+// are generated with `noText: true` - a chain depending on two independent strings is
+// more fragile than either of its halves. Nothing here feeds selection.
+function collectChainsForCandidate(cache: Cache, injectedScript: InjectedScript, targetElement: Element, options: InternalOptions, candidate: SelectorToken[], collector: SelectorCollector) {
+  let anchored = 0;
+  let depth = 0;
+  for (let parent = parentElementOrShadowHost(targetElement); parent && parent !== options.root; parent = parentElementOrShadowHost(parent)) {
+    if (++depth > kMaxAnchorAncestors || anchored >= kMaxAnchorsPerCandidate)
+      return;
+    if (!collector.wantsChain(parent, candidate))
+      continue;
+    let parentTokens = cache.disallowText.get(parent);
+    if (parentTokens === undefined) {
+      parentTokens = generateSelectorFor(cache, injectedScript, parent, { ...options, isRecursive: true, noText: true }) || cssFallback(injectedScript, parent, options);
+      cache.disallowText.set(parent, parentTokens);
+    }
+    if (!parentTokens)
+      continue;
+    // Null means this ancestor is not a scope worth chaining through.
+    const anchorTokens = collector.anchorTokensFor(injectedScript, parent, parentTokens, options.root);
+    if (!anchorTokens)
+      continue;
+    collector.addChain(anchorTokens, candidate, parent);
+    ++anchored;
+  }
 }
 
 function buildNoTextCandidates(injectedScript: InjectedScript, element: Element, options: InternalOptions): SelectorToken[] {

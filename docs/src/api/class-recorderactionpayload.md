@@ -4,12 +4,6 @@
 
 Represents the payload emitted by [`event: BrowserContext.recorderaction`] and [`event: Page.recorderaction`].
 
-## property: RecorderActionPayload.selector
-* since: v1.57
-- type: <[string]>
-
-The primary selector Playwright generated for the element.
-
 ## property: RecorderActionPayload.action
 * since: v1.57
 - type: <[string]>
@@ -17,10 +11,23 @@ The primary selector Playwright generated for the element.
 Recorded user action type. One of `'check'`, `'click'`, `'closePage'`, `'fill'`, `'hover'`, `'navigate'`, `'openPage'`, `'press'`, `'select'`, `'setInputFiles'`, `'uncheck'`, `'assertText'`, `'assertValue'`, `'assertChecked'`, `'assertVisible'`, `'assertSnapshot'`.
 
 ## property: RecorderActionPayload.selectors
-* since: v1.57
-- type: <[Array]<[string]>>
+* since: v1.60
+- type: <[Array]<[Object]>>
+  - `selector` <[string]>
+  - `score` <[float]>
 
-Additional selectors ranked from best to worst. May be empty.
+Every selector collected for the element, sorted strongest first. Each one resolves to the
+target element alone at capture time, so the first entry is the one to lead with and the rest
+are fallbacks that fail differently — a test id, an accessible name, a stable attribute, a
+structural path. Consumers pick their own primary from this list; Playwright does not name one.
+
+`score` is Playwright's own engine score for the selector, on its existing scale where **lower
+is stronger** (a test id scores `1`, a role-with-name around `100`, a positional fallback path
+in the millions). Treat it as ordinal and comparable only between selectors of the same action:
+the scale orders selector families, it does not measure how much better one is than another.
+Empty for actions that replay without an element, such as `'press'`, and for text
+expectations (`'assertText'`, `'assertSnapshot'`), where the generator deliberately
+produces a single selector that is not required to resolve to one element.
 
 ## property: RecorderActionPayload.role
 * since: v1.57
@@ -68,9 +75,11 @@ Whether the component targeted by locator is inside a form.
 
 ## property: RecorderActionPayload.frameSelectors
 * since: v1.57
-- type: <[Array]<[Array]<[string]>>>
+- type: <[Array]<[Array]<[Object]>>>
+  - `selector` <[string]> Selector expression for that iframe element.
+  - `score` <[float]> Playwright's engine score for it — **lower is stronger**.
 
-Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is an array of selectors ranked from best to worst for the corresponding iframe element. Only present when the target element is inside an iframe.
+Alternative selectors for each iframe in the frame path, from the outermost to the innermost. Each entry is the scored candidate set for the corresponding iframe element, sorted strongest first — same shape and score scale as [`property: RecorderActionPayload.selectors`]. Only present when the target element is inside an iframe.
 
 ## property: RecorderActionPayload.displayValue
 * since: v1.57

@@ -98,17 +98,25 @@ Frame:
       group: getter
       parameters:
         selector: string
+        maxSelectors: int?
         timeout: float
       returns:
-        selector: string
         selectors:
           type: array
-          items: string
+          items:
+            type: object
+            properties:
+              selector: string
+              score: float
         frameSelectors:
           type: array
           items:
             type: array
-            items: string
+            items:
+              type: object
+              properties:
+                selector: string
+                score: float
 
     blur:
       title: Blur

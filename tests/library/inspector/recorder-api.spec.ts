@@ -332,8 +332,9 @@ test('should collect multiple selectors when requested', async ({ context }) => 
 
 test('should emit recorder action events for recordSelectors option', async ({ context }) => {
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
-  const events: { action: string, selector: string, selectors: string[], role?: string, text?: string }[] = [];
-  recordedContext.on('recorderaction' as any, (payload: { action: string, selector: string, selectors: string[], role?: string, text?: string }) => events.push(payload));
+  type Payload = { action: string, selectors: { selector: string, score: number }[], role?: string, text?: string };
+  const events: Payload[] = [];
+  recordedContext.on('recorderaction' as any, (payload: Payload) => events.push(payload));
 
   const page = await recordedContext.newPage();
   await page.setContent(`<button>Submit</button>`);
@@ -490,7 +491,7 @@ test('generateSelectors matches what recording the same element emits', async ({
   // capture-time generation are the same feature — same engine, same options — so for the
   // same element they must return identical ranked lists.
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
-  const events: { action: string, selector: string, selectors: string[], frameSelectors?: string[][] }[] = [];
+  const events: { action: string, selectors: { selector: string, score: number }[], frameSelectors?: { selector: string, score: number }[][] }[] = [];
   recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
 
   const page = await recordedContext.newPage();
@@ -499,7 +500,6 @@ test('generateSelectors matches what recording the same element emits', async ({
   await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
 
   const generated = await page.locator('#submit').generateSelectors();
-  expect(generated.selector).toBe(events[0].selector);
   expect(generated.selectors).toEqual(events[0].selectors);
   expect(generated.selectors.length).toBeGreaterThan(1);
   expect(generated.frameSelectors).toEqual([]);
@@ -508,7 +508,7 @@ test('generateSelectors matches what recording the same element emits', async ({
 
 test('generateSelectors returns the frame chain for elements inside iframes', async ({ context }) => {
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
-  const events: { action: string, selector: string, selectors: string[], frameSelectors?: string[][] }[] = [];
+  const events: { action: string, selectors: { selector: string, score: number }[], frameSelectors?: { selector: string, score: number }[][] }[] = [];
   recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
 
   const page = await recordedContext.newPage();
@@ -521,7 +521,16 @@ test('generateSelectors returns the frame chain for elements inside iframes', as
   expect(generated.selectors).toEqual(events[0].selectors);
   expect(generated.frameSelectors).toEqual(events[0].frameSelectors);
   expect(generated.frameSelectors).toHaveLength(1);
-  expect(generated.frameSelectors[0].length).toBeGreaterThan(0);
+  // A hop carries the same scored shape an element does (weighted-locator-generation
+  // spec): candidates for that one iframe, strongest first, on the engine's own scale.
+  const hop = generated.frameSelectors[0];
+  expect(hop.length).toBeGreaterThan(0);
+  for (const entry of hop) {
+    expect(typeof entry.selector).toBe('string');
+    expect(entry.score).toBeGreaterThan(0);
+  }
+  expect(hop.map(e => e.score)).toEqual([...hop.map(e => e.score)].sort((a, b) => a - b));
+  expect(hop.map(e => e.selector)).toContain('#frame1');
   await recordedContext.close();
 });
 
@@ -537,10 +546,176 @@ test('generateSelectors promotes to the interactive ancestor and needs no record
   expect(forIcon.selectors.length).toBeGreaterThan(1);
 });
 
+test('records the scored selector set on every action payload', async ({ context }) => {
+  // zazu's weighted-locator-generation spec: an action payload carries exactly one
+  // locator field, the scored set - which entry to lead with is the consumer's call, so
+  // the payload names no primary. That the set is a superset of what the engine's own
+  // enumeration produces is an engine guarantee, asserted in selector-generator.spec.ts.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <main>
+      <div class="row" data-row="7">
+        <a class="row__link" href="/item/7">Open 7</a>
+      </div>
+    </main>`);
+  await page.getByRole('link', { name: 'Open 7' }).click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  const { selector, selectors } = events[0];
+  expect(selector).toBeUndefined();
+  expect(selectors.length).toBeGreaterThan(1);
+  for (const entry of selectors) {
+    expect(typeof entry.selector).toBe('string');
+    expect(entry.score).toBeGreaterThan(0);
+  }
+  // Scores are the engine's: lower is stronger, and the list is sorted by them.
+  const scores = selectors.map((entry: any) => entry.score);
+  expect(scores).toEqual([...scores].sort((a: number, b: number) => a - b));
+  // The point of the exercise: something that outlives the link's text changing.
+  expect(selectors.some((entry: any) => !entry.selector.includes('Open 7'))).toBe(true);
+  await recordedContext.close();
+});
+
+test('still names a step when only the scored set carries a role', async ({ context }) => {
+  // `role`/`text` are read from the engine's primary first and from the scored set after,
+  // now that the unscored list no longer travels on the action. Here the test id wins the
+  // primary and both buttons share a name, so the metadata has to come out of the scored
+  // set - the path the payload compaction changed.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <div name="row-7"><button data-testid="buy-7">Buy</button></div>
+    <div name="row-8"><button data-testid="buy-8">Buy</button></div>`);
+  await page.locator('[data-testid="buy-7"]').click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  const roleBearing = events[0].selectors.filter((entry: any) => entry.selector.includes('internal:role=button'));
+  expect(roleBearing.length).toBeGreaterThan(0);
+  expect(events[0].role).toBe('button');
+  expect(events[0].text).toBe('Buy');
+  await recordedContext.close();
+});
+
+test('records at most the requested number of selectors', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: { max: 3 } });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button id="submit" class="btn cta" data-testid="submit" title="Submit">Submit</button>`);
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  expect(events[0].selectors.length).toBeGreaterThan(0);
+  expect(events[0].selectors.length).toBeLessThanOrEqual(3);
+  await recordedContext.close();
+});
+
+test('generateSelectors returns the same scored set a recording of that element carries', async ({ context }) => {
+  // The relocate-mode parity contract, extended to the scored set: same engine, same
+  // options, same budget default - so an old test relocated matches a fresh recording.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`<div class="box"><button id="submit" class="cta">Submit</button></div>`);
+  await page.getByRole('button', { name: 'Submit' }).click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+
+  const generated = await page.locator('#submit').generateSelectors();
+  expect(generated.selectors).toEqual(events[0].selectors);
+  expect(generated.selectors.length).toBeGreaterThan(1);
+
+  // A smaller budget takes the strongest entries, in the same order.
+  const narrowed = await page.locator('#submit').generateSelectors({ maxSelectors: 2 });
+  expect(narrowed.selectors).toEqual(generated.selectors.slice(0, 2));
+  await recordedContext.close();
+});
+
 test('generateSelectors rejects when the locator is ambiguous or resolves to nothing', async ({ context }) => {
   context.setDefaultTimeout(1000);
   const page = await context.newPage();
   await page.setContent(`<div class="x"></div><div class="x"></div>`);
   await expect(page.locator('.x').generateSelectors()).rejects.toThrow(/strict mode violation/);
   await expect(page.locator('#missing').generateSelectors()).rejects.toThrow(/Timeout/);
+});
+
+// `window.__pw_resolveAll` — the consensus binding (zazu's consensus-locator-resolution
+// spec): one atomic resolution pass over a step's selectors, meant to be polled.
+async function resolveAll(target: Page | import('@playwright/test').Frame, selectors: string[], stableMs: number, token: string) {
+  return await target.evaluate(([selectors, stableMs, token]) => (window as any).__pw_resolveAll(selectors, stableMs, token), [selectors, stableMs, token] as const);
+}
+
+test('resolveAll names the element each selector matched, and nothing for a non-unique one', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.setContent(`<div class="x"><button id="go" class="y">Go</button></div><div class="y"></div>`);
+  // stableMs 0 decides on the current pass, whatever its history.
+  const pass = await resolveAll(page, ['#go', 'internal:role=button[name="Go"i]', '.y', '#missing', 'bogus:engine'], 0, 't1');
+  expect(pass).toEqual({ matches: [
+    { id: 0, count: 1 },
+    { id: 0, count: 1 },     // same node as #go: same id
+    { id: null, count: 2 },  // ambiguous: names nothing
+    { id: null, count: 0 },  // dead
+    { id: null, count: 0 },  // unparsable: dead, not an exception
+  ] });
+  await recordedContext.close();
+});
+
+test('resolveAll withholds a decision until the agreement pattern has held for stableMs', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button id="go">Go</button>`);
+  const selectors = ['#go', 'internal:role=button[name="Go"i]', '#later'];
+
+  expect(await resolveAll(page, selectors, 150, 'step-1')).toBeNull();
+  await expect.poll(() => resolveAll(page, selectors, 150, 'step-1')).not.toBeNull();
+
+  // A signature change restarts the clock: a selector that starts matching is new evidence.
+  await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<span id="later"></span>'));
+  expect(await resolveAll(page, selectors, 150, 'step-1')).toBeNull();
+  await expect.poll(() => resolveAll(page, selectors, 150, 'step-1')).toEqual({ matches: [
+    { id: 0, count: 1 }, { id: 0, count: 1 }, { id: 1, count: 1 },
+  ] });
+
+  // The clock is keyed by token: a later step whose resolution coincides never inherits
+  // the earlier step's stability.
+  expect(await resolveAll(page, selectors, 150, 'step-2')).toBeNull();
+  await expect.poll(() => resolveAll(page, selectors, 150, 'step-2')).not.toBeNull();
+
+  // Nodes may be replaced under a stable pattern: a keyed re-render does not reset it.
+  await page.evaluate(() => document.body.innerHTML = document.body.innerHTML);
+  expect(await resolveAll(page, selectors, 150, 'step-2')).not.toBeNull();
+  await recordedContext.close();
+});
+
+test('resolveAll keeps polling while no selector resolves uniquely', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.setContent(`<div class="x"></div><div class="x"></div>`);
+  const selectors = ['#missing', '.x'];
+  expect(await resolveAll(page, selectors, 150, 't')).toBeNull();
+  await page.waitForTimeout(300);
+  // Nothing to decide on, however long it has been that way — only the caller's ceiling ends this.
+  expect(await resolveAll(page, selectors, 150, 't')).toBeNull();
+  expect(await resolveAll(page, selectors, 0, 't')).toEqual({ matches: [{ id: null, count: 0 }, { id: null, count: 2 }] });
+  await recordedContext.close();
+});
+
+test('resolveAll is installed in child frames', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.setContent(`<iframe id="frame1" srcdoc="<button id='inner'>Go</button>"></iframe>`);
+  const frame = page.frames()[1];
+  // The recorder lands in a new document asynchronously, shortly after it commits.
+  await expect.poll(() => resolveAll(frame, ['#inner'], 0, 't').catch(() => 'not installed yet')).toEqual({ matches: [{ id: 0, count: 1 }] });
+  await recordedContext.close();
 });

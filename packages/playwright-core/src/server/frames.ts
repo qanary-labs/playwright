@@ -1819,16 +1819,16 @@ export class Frame extends SdkObject<FrameEventMap> {
   // mode's (`recordSelectors: true` hardwires collectSelectors, same testIdAttributeName
   // fallback chain), and generation runs on the element `selector` strictly resolves to,
   // so ranking and interactive-ancestor promotion match a fresh recording by construction.
-  async generateSelectors(progress: Progress, selector: string): Promise<{ selector: string, selectors: string[], frameSelectors: string[][] }> {
+  async generateSelectors(progress: Progress, selector: string, maxSelectors?: number): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][] }> {
     return await this._retryWithProgressIfNotConnected(progress, selector, { strict: true, performActionPreChecks: true }, async (progress, handle) => {
       const testIdAttributeName = this._page.browserContext.selectors().testIdAttributeName() || 'data-testid';
-      const generated = await progress.race(handle.evaluateInUtility(([injected, element, { testIdAttributeName }]) => {
-        const result = injected.generateSelector(element, { testIdAttributeName, multiple: true, collectSelectors: true });
-        return { selector: result.selector, selectors: result.selectors };
-      }, { testIdAttributeName }));
+      const generated = await progress.race(handle.evaluateInUtility(([injected, element, { testIdAttributeName, maxSelectors }]) => {
+        const result = injected.generateSelector(element, { testIdAttributeName, multiple: true, collectSelectors: true, maxSelectors });
+        return { selectors: result.rankedSelectors };
+      }, { testIdAttributeName, maxSelectors }));
       if (generated === 'error:notconnected')
         return generated;
-      const { frameSelectors } = await generateFrameSelector(progress, handle._frame);
+      const { frameSelectors } = await generateFrameSelector(progress, handle._frame, maxSelectors);
       return { ...generated, frameSelectors };
     });
   }

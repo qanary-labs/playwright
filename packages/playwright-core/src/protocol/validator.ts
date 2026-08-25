@@ -858,6 +858,7 @@ scheme.BrowserContextEnableRecorderParams = tObject({
   mode: tOptional(tEnum(['inspecting', 'recording'])),
   recorderMode: tOptional(tEnum(['default', 'api'])),
   collectSelectors: tOptional(tBoolean),
+  maxSelectors: tOptional(tInt),
   pauseOnNextStatement: tOptional(tBoolean),
   testIdAttributeName: tOptional(tString),
   launchOptions: tOptional(tAny),
@@ -1269,12 +1270,18 @@ scheme.FrameAriaSnapshotResult = tObject({
 });
 scheme.FrameGenerateSelectorsParams = tObject({
   selector: tString,
+  maxSelectors: tOptional(tInt),
   timeout: tFloat,
 });
 scheme.FrameGenerateSelectorsResult = tObject({
-  selector: tString,
-  selectors: tArray(tString),
-  frameSelectors: tArray(tArray(tString)),
+  selectors: tArray(tObject({
+    selector: tString,
+    score: tFloat,
+  })),
+  frameSelectors: tArray(tArray(tObject({
+    selector: tString,
+    score: tFloat,
+  }))),
 });
 scheme.FrameBlurParams = tObject({
   selector: tString,

@@ -56,7 +56,6 @@ await page.GetByRole(AriaRole.Button, new() { Name = "Submit" }).First.ClickAsyn
     expect.soft(clickAction).toEqual({
       name: 'click',
       selector: 'internal:role=button[name="Submit"i] >> nth=0',
-      selectors: ['internal:role=button[name="Submit"i] >> nth=0', 'internal:role=button >> nth=0'],
       button: 'left',
       clickCount: 1,
       locator: { body: 'button', kind: 'role', options: { exact: false, attrs: [], name: 'Submit' }, next: { body: '', kind: 'first', options: {} } },
@@ -133,14 +132,13 @@ await page.Locator("#frame1").ContentFrame.GetByText("Hello1").ClickAsync();`);
     expect.soft(clickAction).toEqual({
       name: 'click',
       selector: 'internal:text="Hello1"i',
-      selectors: ['internal:text="Hello1"i', 'div'],
       button: 'left',
       clickCount: 1,
       locator: { body: 'Hello1', kind: 'text', options: { exact: false } },
       modifiers: 0,
       signals: [],
       framePath: ['#frame1'],
-      frameSelectors: [['#frame1', 'iframe']],
+      frameSelectors: [[{ selector: '#frame1', score: 500 }, { selector: 'iframe', score: 530 }]],
       pageAlias: 'page',
       pageGuid: expect.any(String),
     });
@@ -174,14 +172,16 @@ await page.Locator("#frame1").ContentFrame.Locator("iframe").ContentFrame.GetByT
     expect.soft(clickAction).toEqual({
       name: 'click',
       selector: 'internal:text="Hello2"i',
-      selectors: ['internal:text="Hello2"i', 'div'],
       button: 'left',
       clickCount: 1,
       locator: { body: 'Hello2', kind: 'text', options: { exact: false } },
       modifiers: 0,
       signals: [],
       framePath: ['#frame1', 'iframe'],
-      frameSelectors: [['#frame1', 'iframe'], ['iframe']],
+      frameSelectors: [
+        [{ selector: '#frame1', score: 500 }, { selector: 'iframe', score: 530 }],
+        [{ selector: 'iframe', score: 530 }],
+      ],
       pageAlias: 'page',
       pageGuid: expect.any(String),
     });
@@ -215,14 +215,19 @@ await page.Locator("#frame1").ContentFrame.Locator("iframe").ContentFrame.Locato
     expect.soft(clickAction).toEqual({
       name: 'click',
       selector: 'internal:text="HelloNameAnonymous"i',
-      selectors: ['internal:text="HelloNameAnonymous"i', 'div'],
       button: 'left',
       clickCount: 1,
       locator: { body: 'HelloNameAnonymous', kind: 'text', options: { exact: false } },
       modifiers: 0,
       signals: [],
       framePath: ['#frame1', 'iframe', 'iframe >> nth=2'],
-      frameSelectors: [['#frame1', 'iframe'], ['iframe'], ['iframe >> nth=2']],
+      frameSelectors: [
+        [{ selector: '#frame1', score: 500 }, { selector: 'iframe', score: 530 }],
+        [{ selector: 'iframe', score: 530 }],
+        // Qanary fork: the third iframe has nothing to name it, so the hop keeps both of
+        // the weak candidates it has - honestly scored, rather than one silent guess.
+        [{ selector: 'iframe >> nth=2', score: 11060 }, { selector: 'iframe:nth-child(4)', score: 10001000 }],
+      ],
       pageAlias: 'page',
       pageGuid: expect.any(String),
     });
