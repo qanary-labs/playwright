@@ -26,7 +26,7 @@ type Point = { x: number, y: number };
 //  2. Reveal — while the pointer is over it, the page reveals new visible content
 //     (menu mounts, tooltip appears, hidden/class/style toggles), and
 //  3. Confirmation — the next committed action's target is inside the revealed
-//     content (or the embedder asks to flush before an assertion).
+//     content.
 // Only confirmed candidates are emitted — retroactively, immediately before the
 // action that depends on them, as `hover` actions flagged `inferred: true`.
 // Everything else is discarded silently.
@@ -253,16 +253,6 @@ export class HoverInferenceEngine {
     this._candidates = [];
     this._entered = [];
     return chain.map(candidate => this._hoverAction(candidate));
-  }
-
-  // Pre-assert flush: the currently showing candidates (their revealed content
-  // is still visible) are what the assertion may depend on — tooltip checks.
-  flushVisibleHovers(): actions.HoverAction[] {
-    this._lastActionAt = this._builtins().Date.now();
-    const alive = this._candidates.filter(candidate => candidate.revealed.some(({ root }) => root.isConnected && this._isVisible(root)));
-    this._candidates = [];
-    this._entered = [];
-    return alive.map(candidate => this._hoverAction(candidate));
   }
 
   // Diagnostic snapshot for the __pw_recorderHoverDebug embedder global — hover
@@ -752,7 +742,7 @@ export class HoverInferenceEngine {
   // and one rAF batch catching such a dip must not erase the candidate. The
   // confirm step needs no visibility guard anyway — hidden content cannot be
   // clicked, so a committed action inside the root proves the reveal still
-  // mattered; the pre-assert flush checks visibility itself at flush time.
+  // mattered.
   // A disconnected root falls back to its mount parent first: AJAX menus
   // (JetMenu Elementor templates) replace their first-mounted loader with the
   // rendered content, and losing the root must not cost the trigger candidate.

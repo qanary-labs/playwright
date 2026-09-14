@@ -65,9 +65,6 @@ interface RecorderTool {
   onMouseLeave?(event: MouseEvent): void;
   onFocus?(event: Event): void;
   onScroll?(event: Event): void;
-  // Emits any pending inferred hover steps (see HoverInferenceEngine) — called
-  // by the embedder before an out-of-recorder confirmation such as an assertion.
-  flushInferredHovers?(): Promise<void>;
   hoverInferenceDebugState?(): unknown;
 }
 
@@ -823,11 +820,6 @@ class JsonRecordActionTool implements RecorderTool {
 
   onScroll(event: Event) {
     this._hoverInference.onScroll();
-  }
-
-  async flushInferredHovers() {
-    for (const hover of this._hoverInference.flushVisibleHovers())
-      await this._recorder.recordAction(hover);
   }
 
   hoverInferenceDebugState(): unknown {
@@ -2065,10 +2057,6 @@ export class Recorder {
   elementPicked(selector: string, model: HighlightModel) {
     const ariaSnapshot = this.injectedScript.ariaSnapshot(model.elements[0], { mode: 'default' });
     void this._delegate.elementPicked?.({ selector, ariaSnapshot });
-  }
-
-  async flushInferredHovers() {
-    await this._currentTool.flushInferredHovers?.();
   }
 
   hoverInferenceDebugState(): unknown {

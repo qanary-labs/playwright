@@ -91,12 +91,13 @@
   - `packages/injected/src/recorder/hoverInference.ts` — the engine (new file; state, signals,
     confirmation, performance batching).
   - `packages/injected/src/recorder/recorder.ts` — `JsonRecordActionTool` integration: pointer/scroll
-    feed, `_recordConfirmedAction` (emits confirmed hovers before each recorded action),
-    `flushInferredHovers` on the tool interface and `Recorder`.
+    feed, `_recordConfirmedAction` (emits confirmed hovers before each recorded action).
   - `packages/injected/src/recorder/pollingRecorder.ts` — main-world global
-    `__pw_recorderFlushInferredHovers()` (same pattern as `__pw_refreshOverlay`): the embedder calls
-    it per frame before assertions, which bypass the recorder, so a hover confirmed only by an
-    assertion (tooltip checks) still gets recorded.
+    `__pw_recorderHoverDebug()` (same pattern as `__pw_refreshOverlay`). A pre-assert flush global
+    (`__pw_recorderFlushInferredHovers()`, called by the embedder before assertions, which bypass
+    the recorder) lived here until 2026-09-15: an assertion has no target to test containment
+    against, so the flush recorded every candidate with a still-visible reveal — junk hovers ahead
+    of each assertion. Only committed actions confirm hovers now.
   - `packages/recorder/src/actions.d.ts` — `HoverAction.inferred?: boolean`.
   - `packages/playwright-core/src/client/browserContext.ts` — `_simplifyRecordedAction` forwards
     `inferred` onto the `recorderaction` payload.
@@ -123,7 +124,7 @@
   `tests/library/inspector/recorder-api.spec.ts`.
 
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
-  `PollingRecorder` in every frame (same pattern as `__pw_recorderFlushInferredHovers`), so it
+  `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its
   `docs/specs/consensus-locator-resolution.md`. One synchronous resolution pass over a step's
   selectors through `injectedScript.querySelectorAll` — no `await` between them, so all N see

@@ -440,9 +440,11 @@ test('should not attribute a click-opened menu to the hover that preceded the cl
   expect(names(log)).toEqual(['click', 'click']);
 });
 
-test('should flush showing candidates through the embedder global before an assertion', async ({ context }) => {
-  // Assertions bypass the recorder: the embedder pings every frame's
-  // __pw_recorderFlushInferredHovers() before screenshotting (tooltip checks).
+test('should not record a showing candidate without a dependent action (no pre-assert flush)', async ({ context }) => {
+  // Assertions bypass the recorder and used to flush every candidate whose
+  // revealed content was still showing — junk hovers before each assertion,
+  // since an assertion has no target to test containment against. Only
+  // committed actions confirm hovers; the embedder global is gone.
   const log = await startRecording(context);
   const page = await context.newPage();
   await page.setContent(`
@@ -450,9 +452,8 @@ test('should flush showing candidates through the embedder global before an asse
   `);
   await page.getByText('Info').hover();
   await page.waitForTimeout(SETTLE);
-  await page.evaluate('window.__pw_recorderFlushInferredHovers()');
-  await expect.poll(() => names(log)).toEqual(['hover']);
-  expect(hovers(log)[0].inferred).toBe(true);
+  expect(await page.evaluate('typeof window.__pw_recorderFlushInferredHovers')).toBe('undefined');
+  expect(names(log)).toEqual([]);
 });
 
 test('hover() should complete the real-mouse handshake required by SmartMenus-style menus', async ({ context }) => {
