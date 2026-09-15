@@ -10587,7 +10587,7 @@ export interface Browser {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
      * selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
@@ -16059,7 +16059,7 @@ export interface BrowserType<Unused = {}> {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
      * selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
@@ -20731,6 +20731,23 @@ export interface RecorderActionPayload {
   isInForm: boolean;
 
   /**
+   * Where the recorded element is on the whole page: the center of its bounding box in the document coordinates of its
+   * own frame — viewport position plus the frame's scroll offset, in CSS pixels — read on the element the selectors
+   * were generated for (after any retarget to an interactive ancestor, like
+   * [recorderActionPayload.positionRatio](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-position-ratio)).
+   * Present on every action that carries selectors, clicks and keyboard-driven actions alike, so a consumer can later
+   * tell apart elements the selectors no longer distinguish (a repeated component whose distinguishing attributes
+   * drifted) by where the element was. Absent when the element's box has no area. Unlike
+   * [recorderActionPayload.positionRatio](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-position-ratio),
+   * it says which element, not where on it.
+   */
+  point?: {
+    x: number;
+
+    y: number;
+  };
+
+  /**
    * Normalized click point, with each axis in `[0, 1]`, relative to the recorded element's padding box, for `'click'`
    * actions. Multiplying these ratios by the element's padding-box size at replay reconstructs the exact point that was
    * pressed, robust to layout/viewport changes. This also keeps replay accurate when the selector was retargeted to an
@@ -23185,7 +23202,7 @@ export interface AndroidDevice {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
      * selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
@@ -24377,7 +24394,7 @@ export interface BrowserContextOptions {
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
    * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-   * submitter, formId, isInForm, frameSelectors, positionRatio }` describing the action so you can consume the
+   * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
    * selectors in your own tooling.
    *
    * Pass `true` for the defaults, or an object to set the collection budget.

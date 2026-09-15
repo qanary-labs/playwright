@@ -123,6 +123,18 @@
   the `generateSelectors` tests (capture parity, frame chain, promotion, strictness) in
   `tests/library/inspector/recorder-api.spec.ts`.
 
+- **`point` on recorded actions** (`packages/injected/src/recorder/elementPoint.ts`, new file) — every
+  locator-bearing action the api-mode recorder emits carries the document-space center of the
+  recorded element in its own frame: bounding-box center plus the frame's scroll offset, read on
+  the retargeted element in the same tick as its rect, at every `_recordConfirmedAction` site
+  (`recorder/recorder.ts`) and on inferred hovers (`recorder/hoverInference.ts`, captured with the
+  candidate's selectors). Absent for a box with no area. `positionRatio`'s sibling in every respect —
+  same capture sites, forwarded by `_simplifyRecordedAction` (`client/browserContext.ts`), documented
+  on `RecorderActionPayload.point` — but it says *which* element, not where on it: the consumer
+  (zazu's run mode) hit-tests it when the selectors match several copies and none names one. Full
+  design: zazu's `docs/specs/self-healing.md`. Guarded by the `point` tests in
+  `tests/library/inspector/recorder-api.spec.ts` and one in `hover-inference.spec.ts`.
+
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its

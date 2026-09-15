@@ -242,6 +242,8 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     const positionRatio = (actionInContext.action as actions.ClickAction).positionRatio;
     if (positionRatio)
       result.positionRatio = positionRatio;
+    if (action.point)
+      result.point = action.point;
     if ((actionInContext.action as actions.HoverAction).inferred)
       result.inferred = true;
     if (actionInContext.frame.frameSelectors)

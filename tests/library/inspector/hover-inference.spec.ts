@@ -74,6 +74,25 @@ test('should record an inferred hover when the next click depends on a revealed 
   }));
 });
 
+test('should record the hovered element\'s document-space center on an inferred hover', async ({ context }) => {
+  // zazu's self-healing spec: every locator-bearing action carries `point`, the
+  // retroactive hover included — read when the candidate is created, since the reveal
+  // it triggers can shift layout before the confirming click.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <button id="products" style="position:absolute;left:100px;top:50px;width:120px;height:40px"
+      onmouseenter="document.getElementById('menu').hidden = false">Products</button>
+    <ul id="menu" hidden style="position:absolute;left:100px;top:90px"><li><a href="#" id="pricing">Pricing</a></li></ul>
+  `);
+  await page.getByRole('button', { name: 'Products' }).hover();
+  await page.waitForTimeout(SETTLE);
+  await page.getByRole('link', { name: 'Pricing' }).click();
+
+  expect(names(log)).toEqual(['hover', 'click']);
+  expect(hovers(log)[0]).toEqual(expect.objectContaining({ inferred: true, point: { x: 160, y: 70 } }));
+});
+
 test('should emit one hover per level of a nested menu, oldest first', async ({ context }) => {
   const log = await startRecording(context);
   const page = await context.newPage();

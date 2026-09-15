@@ -190,6 +190,122 @@ test('does not record a click position for an Enter-key implicit form submission
   expect((submitClick!.action as any).positionRatio).toBeUndefined();
 });
 
+// Document-space center of the recorded element (zazu's self-healing spec): viewport
+// rect center plus the frame's scroll offset, on the retargeted element, for every
+// locator-bearing action — not only clicks. Replay hit-tests it to tell apart elements
+// the selectors no longer distinguish.
+async function documentCenter(page: Page, selector: string, frame?: string): Promise<{ x: number, y: number }> {
+  const target = frame ? page.frameLocator(frame).locator(selector) : page.locator(selector);
+  return target.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2 + window.scrollX, y: rect.top + rect.height / 2 + window.scrollY };
+  });
+}
+
+test('records the recorded element\'s document-space center on click, fill, check and select', async ({ context }) => {
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <button id="btn" style="position:absolute;left:100px;top:50px;width:120px;height:40px">Go</button>
+    <input id="name" style="position:absolute;left:300px;top:50px;width:200px;height:30px" />
+    <input id="agree" type="checkbox" style="position:absolute;left:100px;top:150px;width:20px;height:20px" />
+    <select id="lang" style="position:absolute;left:300px;top:150px;width:120px;height:30px"><option value="fr">fr</option><option value="en">en</option></select>`);
+  await page.locator('#btn').click();
+  await page.locator('#name').fill('alice');
+  await page.locator('#agree').check();
+  await page.locator('#lang').selectOption('en');
+
+  expect((log.action('click')[0].action as any).point).toEqual({ x: 160, y: 70 });
+  expect((log.action('fill')[0].action as any).point).toEqual(await documentCenter(page, '#name'));
+  // The checkbox keeps the browser's default margin, so its box is not where `left`/`top` say.
+  expect((log.action('check')[0].action as any).point).toEqual(await documentCenter(page, '#agree'));
+  expect((log.action('select')[0].action as any).point).toEqual(await documentCenter(page, '#lang'));
+});
+
+test('records the point of the retargeted element, not of the pressed child', async ({ context }) => {
+  // The icon is at the far left of the link; the point is the link's own center,
+  // like positionRatio is relative to the link — the selectors name the link.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <a id="lnk" href="#" style="position:absolute;left:100px;top:100px;display:inline-block;width:200px;height:40px;padding:0">
+      <i id="ico" style="position:absolute;left:0;top:14px;width:12px;height:12px;background:#000"></i>
+    </a>`);
+  await page.locator('#ico').click();
+
+  const action = log.action('click')[0].action as any;
+  expect(action.selector).toBe('#lnk');
+  expect(action.point).toEqual({ x: 200, y: 120 });
+});
+
+test('records no point when there is nothing to measure', async ({ context }) => {
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <form onsubmit="return false">
+      <input id="user" type="text" />
+      <button id="go" type="submit">Go</button>
+    </form>
+    <input id="tiny" style="position:absolute;width:0;height:0;padding:0;border:0" />`);
+  await page.locator('#user').fill('alice');
+  await page.locator('#user').press('Enter');
+  // A keyboard-driven click has no pointer, but the button is a real box: it gets a point.
+  const submitClick = log.action('click').find(a => (a.action as any).clickCount === 0);
+  expect(submitClick).toBeTruthy();
+  expect((submitClick!.action as any).point).toEqual(await documentCenter(page, '#go'));
+
+  // A box with no area has no center to record: typed into through the keyboard, since
+  // nothing can be clicked there.
+  await page.evaluate(() => (document.getElementById('tiny') as HTMLInputElement).focus());
+  await page.keyboard.type('a');
+  const fill = log.action('fill').find(a => (a.action as any).selector.includes('tiny'));
+  expect(fill).toBeTruthy();
+  expect((fill!.action as any).point).toBeUndefined();
+});
+
+test('records the point in document coordinates: a scrolled click keeps its unscrolled position', async ({ context }) => {
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <div style="height:3000px"></div>
+    <button id="deep" style="position:absolute;left:40px;top:2500px;width:100px;height:40px">Deep</button>
+    <div style="height:1000px"></div>`);
+  await page.evaluate(() => window.scrollTo(0, 2400));
+  await page.locator('#deep').click();
+
+  const action = log.action('click')[0].action as any;
+  expect(action.point).toEqual({ x: 90, y: 2520 });
+});
+
+test('records the point in the element\'s own frame coordinates', async ({ context }) => {
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <div style="height:300px"></div>
+    <iframe id="frame1" style="position:absolute;left:500px;top:300px;width:400px;height:200px" srcdoc="<button id='inner' style='position:absolute;left:20px;top:30px;width:60px;height:20px'>Go</button>"></iframe>`);
+  // The recorder lands in the child document asynchronously, shortly after it commits.
+  const frame = page.frames()[1];
+  await expect.poll(() => frame.evaluate(() => typeof (window as any).__pw_resolveAll === 'function')).toBe(true);
+  await page.frameLocator('#frame1').locator('#inner').click();
+  await expect.poll(() => log.action('click')).toHaveLength(1);
+
+  const action = log.action('click')[0].action as any;
+  // The iframe's own document: not offset by the frame's position in the parent.
+  expect(action.point).toEqual({ x: 50, y: 40 });
+});
+
+test('forwards the point on the recorder action payload', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+  const page = await recordedContext.newPage();
+  await page.setContent(`<button id="btn" style="position:absolute;left:10px;top:20px;width:100px;height:40px">Go</button>`);
+  await page.locator('#btn').click();
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(1);
+  expect(events[0].point).toEqual({ x: 60, y: 40 });
+  await recordedContext.close();
+});
+
 test('should right click', async ({ context, browserName, platform, channel }) => {
   const log = await startRecording(context);
   const page = await context.newPage();

@@ -18,6 +18,7 @@
 // See DEPS.list for more details.
 import clipPaths from './clipPaths';
 import { HoverInferenceEngine } from './hoverInference';
+import { elementPoint } from './elementPoint';
 
 import type { Point } from '@isomorphic/types';
 import type { AriaSnapshot } from '../ariaSnapshot';
@@ -886,6 +887,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+        point: elementPoint(retargeted),
       }, element);
       return;
     }
@@ -898,6 +900,7 @@ class JsonRecordActionTool implements RecorderTool {
       ariaSnapshot,
       position: positionForEvent(event),
       positionRatio: this._clickRatio(event, retargeted),
+      point: elementPoint(retargeted),
       signals: [],
       button: buttonForEvent(event),
       modifiers: modifiersForEvent(event),
@@ -921,6 +924,7 @@ class JsonRecordActionTool implements RecorderTool {
       ariaSnapshot,
       position: positionForEvent(event),
       positionRatio: this._clickRatio(event, retargeted),
+      point: elementPoint(retargeted),
       signals: [],
       button: 'right',
       modifiers: modifiersForEvent(event),
@@ -934,8 +938,9 @@ class JsonRecordActionTool implements RecorderTool {
 
   onInput(event: Event) {
     const element = this._recorder.deepEventTarget(event);
-    const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
+    const point = elementPoint(retargeted);
     if (isRangeInput(element)) {
       this._recordConfirmedAction({
         name: 'fill',
@@ -950,6 +955,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+        point,
       }, element);
       return;
     }
@@ -973,6 +979,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+        point,
       }, element);
       return;
     }
@@ -992,6 +999,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+        point,
       }, element);
       return;
     }
@@ -1002,8 +1010,9 @@ class JsonRecordActionTool implements RecorderTool {
       return;
 
     const element = this._recorder.deepEventTarget(event);
-    const { ariaSnapshot, selector, selectors, ref } = this._ariaSnapshot(element);
+    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
+    const point = elementPoint(retargeted);
 
     // Similarly to click, trigger checkbox on key event, not input.
     if (event.key === ' ') {
@@ -1020,6 +1029,7 @@ class JsonRecordActionTool implements RecorderTool {
           formId: formId,
           isInForm: isInForm,
           cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+          point,
         }, element);
         return;
       }
@@ -1038,6 +1048,7 @@ class JsonRecordActionTool implements RecorderTool {
       key: event.key,
       modifiers: modifiersForEvent(event),
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
+      point,
     }, element);
   }
 

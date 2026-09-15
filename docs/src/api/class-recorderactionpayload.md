@@ -112,3 +112,11 @@ Present and `true` on `'hover'` actions produced by the hover inference engine: 
   - `y` <[float]>
 
 Normalized click point, with each axis in `[0, 1]`, relative to the recorded element's padding box, for `'click'` actions. Multiplying these ratios by the element's padding-box size at replay reconstructs the exact point that was pressed, robust to layout/viewport changes. This also keeps replay accurate when the selector was retargeted to an interactive ancestor (for example an icon `<i>` inside a `<a>`/`<button>`): the ratios are relative to that ancestor, so the click still lands on the pressed sub-element. Absent for non-click actions and when the element's box could not be measured.
+
+## property: RecorderActionPayload.point
+* since: v1.60
+- type: ?<[Object]>
+  - `x` <[float]>
+  - `y` <[float]>
+
+Where the recorded element is on the whole page: the center of its bounding box in the document coordinates of its own frame — viewport position plus the frame's scroll offset, in CSS pixels — read on the element the selectors were generated for (after any retarget to an interactive ancestor, like [`property: RecorderActionPayload.positionRatio`]). Present on every action that carries selectors, clicks and keyboard-driven actions alike, so a consumer can later tell apart elements the selectors no longer distinguish (a repeated component whose distinguishing attributes drifted) by where the element was. Absent when the element's box has no area. Unlike [`property: RecorderActionPayload.positionRatio`], it says which element, not where on it.

@@ -58,6 +58,11 @@ export type ActionWithSelector = ActionBase & {
   isInForm?: boolean,
   ref?: string,
   cookieBanner?: string,
+  // Document-space center of the recorded element in its own frame (viewport
+  // position plus scroll offset), read post-retarget. Absent when the element's
+  // box has no area. On the base type: every locator-bearing action gets one.
+  // See zazu's docs/specs/self-healing.md.
+  point?: Point,
 };
 
 export type ClickAction = ActionWithSelector & {

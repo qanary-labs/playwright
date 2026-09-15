@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
+import { elementPoint } from './elementPoint';
+
 import type { Recorder } from './recorder';
+import type { Point } from '@isomorphic/types';
 import type * as actions from '@recorder/actions';
 
 type Point = { x: number, y: number };
@@ -57,6 +60,9 @@ type Candidate = {
   // (menu open, aria-expanded flipped) and selectors could differ.
   selector: string;
   selectors?: actions.RankedSelector[];
+  // Document-space center of the element the selectors name, captured with them
+  // (zazu's self-healing spec): a reveal can shift layout before confirmation.
+  point?: Point;
   // Roots of content that became visible while the pointer was over `element`.
   // The mount parent is remembered so a root replaced wholesale (AJAX menus
   // swapping their loader for the rendered template) can fall back to its
@@ -286,6 +292,7 @@ export class HoverInferenceEngine {
       selectors: candidate.selectors,
       signals: [],
       inferred: true,
+      point: candidate.point,
     };
   }
 
@@ -392,7 +399,14 @@ export class HoverInferenceEngine {
     const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName });
     if (!generated.selector)
       return null;
-    const candidate: Candidate = { element, selector: generated.selector, selectors: generated.rankedSelectors, revealed: [], hadReveal: false };
+    const candidate: Candidate = {
+      element,
+      selector: generated.selector,
+      selectors: generated.rankedSelectors,
+      point: elementPoint(generated.elements?.[0] ?? element),
+      revealed: [],
+      hadReveal: false,
+    };
     this._candidates.push(candidate);
     return candidate;
   }
