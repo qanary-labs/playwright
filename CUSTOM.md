@@ -149,8 +149,11 @@
   the clock kept on `window.__zazuResolve` and keyed by the caller's token so a later step can
   never inherit an earlier one's stability; `stableMs` 0 returns the current pass
   unconditionally. Ranking is deliberately not here — everything tunable stays consumer-side.
+  The pass also carries `ancestors` (since 2026-09-23): per uniquely-matched element, the ids of
+  the other matched elements that contain it, so a consumer ranking disagreeing groups can tell a
+  wrapper and the control inside it from two elements that genuinely disagree.
   Files: `packages/injected/src/recorder/resolveAll.ts` (new), the `__pw_resolveAll` line in
-  `recorder/pollingRecorder.ts`. Guarded by the four `resolveAll` tests in
+  `recorder/pollingRecorder.ts`. Guarded by the five `resolveAll` tests in
   `tests/library/inspector/recorder-api.spec.ts`.
 
 - **Collected selectors** (`packages/injected/src/selectorCollector.ts`, new file) — an action
@@ -203,6 +206,16 @@
   (anchor element, target candidate) pair, and chains interleaved so each target candidate places
   its best before any places its second. Normalized and exact spellings of one fact
   (`[name="X"i]` vs `[name="X"s]`) collapse to one slot.
+
+  Refused at the emission gate, even when it is the legacy selector: any candidate naming an
+  element by a build-generated class (`sc-imWYAI`, `elementor-element-1f1818a`; since 2026-09-02)
+  or by a per-render id (`#id323`, `#j_idt23`, `#ctl00_…`; since 2026-09-23) — recognised by shape,
+  never by framework: a `-`/`_` segment of five or more characters with two or more digits
+  interleaved with letters, plus upstream's own `isGuidLike`, which alone let a counter through
+  once it was three digits long. Chains anchored on such a name go with it. A floor admits them
+  after all when nothing else survives, so a set is never emptied. Ids skip the capitals rule
+  classes have (it targets CSS-in-JS hashes and would hit `payment__PONumber`); digit-only
+  segments stay for both (`input_4_27_6`, `col-md-6`).
 
   Frame hops get the same treatment: `generateFrameSelector` runs the collector on each iframe of
   the chain, so `frameSelectors` is `{selector, score}[][]` (one scored set per hop, outermost

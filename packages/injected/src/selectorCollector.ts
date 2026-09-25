@@ -173,13 +173,14 @@ export class SelectorCollector {
     const take = (entry: Entry, ignoreCaps: boolean, admitGenerated = false) => {
       if (seen.has(entry.selector) || picked.length >= this._max)
         return;
-      // A build-generated class is refused even when it is the legacy selector, which is
-      // the one documented exception to the superset contract (see the spec's Contract
-      // change): the contract exists so a consumer loses no coverage by switching to this
-      // list, and an expression that is guaranteed to stop resolving at the target site's
-      // next build is not coverage. The last-resort pass below keeps the floor - a step is
-      // never left with nothing - so the exception can never empty a set.
-      if (!admitGenerated && hasGeneratedClass(entry.selector))
+      // A build-generated class or a per-render id is refused even when it is the legacy
+      // selector, which is the one documented exception to the superset contract (see the
+      // spec's Contract change): the contract exists so a consumer loses no coverage by
+      // switching to this list, and an expression that is guaranteed to stop resolving at
+      // the target site's next build - or next render - is not coverage. The last-resort
+      // pass below keeps the floor - a step is never left with nothing - so the exception
+      // can never empty a set.
+      if (!admitGenerated && hasGeneratedName(entry.selector))
         return;
       const evidence = evidenceKey(entry.selector);
       if (!ignoreCaps) {
@@ -217,8 +218,8 @@ export class SelectorCollector {
         break;
       take(entry, false);
     }
-    // Last resort: an element the page names only by a generated class still has to be
-    // addressable. Better a locator that breaks at the next build than no locator at all.
+    // Last resort: an element the page names only by a generated class or id still has to
+    // be addressable. Better a locator that breaks at the next build than no locator at all.
     if (!picked.length) {
       for (const entry of byScore)
         take(entry, requiredSet.has(entry.selector), true);
@@ -297,16 +298,21 @@ function evidenceKey(selector: string): string {
   return selector.replace(/(["'])[is](?![\w-])/g, '$1');
 }
 
-// Whether any css part of a selector names an element by a build-generated class. Only
-// css parts are read: a `.` inside `internal:text="…"` is punctuation in a sentence, not
-// a class.
-function hasGeneratedClass(selector: string): boolean {
+// Whether any css part of a selector names an element by a build-generated class or a
+// per-render id - as a `#id` token or as the `[id="…"]` form the generator uses for ids
+// that need escaping. Only css parts are read, and quoted values are blanked first: a `.`
+// inside `internal:text="…"` is punctuation in a sentence, and a `#` inside
+// `[title="#1 seller"]` is a character in a title, not an id.
+function hasGeneratedName(selector: string): boolean {
   return selector.split('>>').some(part => {
     const token = part.trim();
     if (token.startsWith('internal:') || token.startsWith('nth='))
       return false;
-    return (token.match(/\.([A-Za-z_-][\w-]*)/g) ?? [])
-        .some(className => isGeneratedClassName(className.slice(1)));
+    const ids = [...token.matchAll(/\[id="((?:[^"\\]|\\.)*)"\]/g)].map(m => m[1].replace(/\\(.)/g, '$1'));
+    const unquoted = token.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""');
+    ids.push(...(unquoted.match(/#([A-Za-z_-][\w-]*)/g) ?? []).map(id => id.slice(1)));
+    return (unquoted.match(/\.([A-Za-z_-][\w-]*)/g) ?? []).some(className => isGeneratedClassName(className.slice(1)))
+        || ids.some(isGeneratedId);
   });
 }
 
@@ -435,14 +441,32 @@ function isRandomSegment(segment: string): boolean {
   // acronym (`espaceDeTravailDDC`), while a runtime name is a handful of characters.
   if (segment.length <= kMaxRandomSegmentLength && /[a-z]/.test(segment) && /[A-Z]{3,}/.test(segment))
     return true;
-  // Two or more digits interleaved with letters: `1f1818a`, `2xY9z`, `d06785f`. One digit
-  // is how people version and number things - `wpcf7-form-control`, `h2`, `col-md-6` are
-  // names, not hashes - so a single digit is never enough on its own.
-  if ((segment.match(/[0-9]/g) ?? []).length >= 2 && /[a-zA-Z]/.test(segment))
+  if (isCounterSegment(segment))
     return true;
   // Case alternating faster than any word does: `hUyBqQ`, the second class CSS-in-JS
   // runtimes emit beside `sc-…`. Upstream's own test for a generated `id`, reused.
   return isGuidLike(segment);
+}
+
+// Two or more digits interleaved with letters: `1f1818a`, `2xY9z`, `d06785f`. One digit
+// is how people version and number things - `wpcf7-form-control`, `h2`, `col-md-6` are
+// names, not hashes - so a single digit is never enough on its own.
+function isCounterSegment(segment: string): boolean {
+  return segment.length >= 5 && (segment.match(/[0-9]/g) ?? []).length >= 2 && /[a-zA-Z]/.test(segment);
+}
+
+// A per-render id: what a component framework numbers its elements with, in render order,
+// so that the same id names a different element at the next render. Upstream's own
+// `isGuidLike` (the generator's gate for the `#id` candidate) catches the short ones and
+// the mixed ones - `id14`, `idf3`, `id2a7` - but passes a counter as soon as it is three
+// digits long: Wicket's `id323`, JSF's `j_idt23`, ASP.NET's `ctl00_…`. The counter shape
+// closes that gap, segment by segment like a class. The capitals rule is deliberately not
+// applied here: it exists for CSS-in-JS class hashes, which no id generator produces, and
+// on ids it would refuse hand-written acronyms (`payment__PONumber`). Digit-only segments
+// stay, as for classes: `input_4_27_6` is a name carrying a number, not a counter wearing
+// a name.
+function isGeneratedId(id: string): boolean {
+  return isGuidLike(id) || id.split(/[-_]+/).some(isCounterSegment);
 }
 
 function isGuidLike(value: string): boolean {

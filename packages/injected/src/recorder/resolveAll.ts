@@ -21,7 +21,10 @@ import type { InjectedScript } from '../injectedScript';
 // carrying the same id matched the same node — and is null otherwise; `count` is how
 // many elements the selector matched (a parse error counts as none).
 export type ResolveMatch = { id: number | null, count: number };
-export type ResolvePass = { matches: ResolveMatch[] };
+// `ancestors[id]` lists the ids of the other uniquely-matched elements that contain
+// element `id`, so a consumer can tell a wrapper and the control inside it — one target
+// seen at two depths — from two elements that genuinely disagree.
+export type ResolvePass = { matches: ResolveMatch[], ancestors: number[][] };
 
 type ResolveState = { token: string, signature: string, since: number };
 
@@ -66,5 +69,9 @@ export function resolveAll(injectedScript: InjectedScript, selectors: string[], 
   }
   if (stableMs > 0 && (ids.size === 0 || now - state.since < stableMs))
     return null;
-  return { matches };
+  const elements = [...ids.keys()];
+  const ancestors = elements.map(element => elements
+      .map((other, id) => other !== element && other.contains(element) ? id : -1)
+      .filter(id => id !== -1));
+  return { matches, ancestors };
 }

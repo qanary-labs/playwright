@@ -782,7 +782,26 @@ test('resolveAll names the element each selector matched, and nothing for a non-
     { id: null, count: 2 },  // ambiguous: names nothing
     { id: null, count: 0 },  // dead
     { id: null, count: 0 },  // unparsable: dead, not an exception
-  ] });
+  ], ancestors: [[]] });
+  await recordedContext.close();
+});
+
+test('resolveAll reports which uniquely-matched elements contain which', async ({ context }) => {
+  // A wrapper and the control inside it are one target seen at two depths; a consumer
+  // ranking disagreeing groups must be able to tell that from two unrelated elements.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.setContent(`<div id="wrap"><span id="mid"><button id="go">Go</button></span></div><button id="other">Other</button>`);
+  const pass = await resolveAll(page, ['#wrap', '#go', '#other', '#mid'], 0, 't');
+  expect(pass).toEqual({
+    matches: [{ id: 0, count: 1 }, { id: 1, count: 1 }, { id: 2, count: 1 }, { id: 3, count: 1 }],
+    ancestors: [
+      [],       // #wrap: contained by nothing matched
+      [0, 3],   // #go: inside #wrap and #mid
+      [],       // #other: unrelated
+      [0],      // #mid: inside #wrap
+    ],
+  });
   await recordedContext.close();
 });
 
@@ -800,7 +819,7 @@ test('resolveAll withholds a decision until the agreement pattern has held for s
   expect(await resolveAll(page, selectors, 150, 'step-1')).toBeNull();
   await expect.poll(() => resolveAll(page, selectors, 150, 'step-1')).toEqual({ matches: [
     { id: 0, count: 1 }, { id: 0, count: 1 }, { id: 1, count: 1 },
-  ] });
+  ], ancestors: [[], []] });
 
   // The clock is keyed by token: a later step whose resolution coincides never inherits
   // the earlier step's stability.
@@ -822,7 +841,7 @@ test('resolveAll keeps polling while no selector resolves uniquely', async ({ co
   await page.waitForTimeout(300);
   // Nothing to decide on, however long it has been that way — only the caller's ceiling ends this.
   expect(await resolveAll(page, selectors, 150, 't')).toBeNull();
-  expect(await resolveAll(page, selectors, 0, 't')).toEqual({ matches: [{ id: null, count: 0 }, { id: null, count: 2 }] });
+  expect(await resolveAll(page, selectors, 0, 't')).toEqual({ matches: [{ id: null, count: 0 }, { id: null, count: 2 }], ancestors: [] });
   await recordedContext.close();
 });
 
@@ -832,6 +851,6 @@ test('resolveAll is installed in child frames', async ({ context }) => {
   await page.setContent(`<iframe id="frame1" srcdoc="<button id='inner'>Go</button>"></iframe>`);
   const frame = page.frames()[1];
   // The recorder lands in a new document asynchronously, shortly after it commits.
-  await expect.poll(() => resolveAll(frame, ['#inner'], 0, 't').catch(() => 'not installed yet')).toEqual({ matches: [{ id: 0, count: 1 }] });
+  await expect.poll(() => resolveAll(frame, ['#inner'], 0, 't').catch(() => 'not installed yet')).toEqual({ matches: [{ id: 0, count: 1 }], ancestors: [[]] });
   await recordedContext.close();
 });

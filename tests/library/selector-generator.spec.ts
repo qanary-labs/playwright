@@ -908,6 +908,51 @@ it.describe('selector generator', () => {
       await assertAllResolve(page, 'span.jLBYtg', collected);
     });
 
+    it('refuses per-render ids, and keeps hand-written ones', async ({ page }) => {
+      // Ids a component framework numbers in render order: the same id names another
+      // element at the next render. Upstream's isGuidLike catches the short and the mixed
+      // ones (id14, idf3, id2a7) but passes a counter once it is three digits long.
+      await page.setContent(`
+        <div id="id311" class="column-one">
+          <textarea id="id297" name="conceptionParamGenPanel:libelleWeb:libelle"></textarea>
+        </div>
+        <form id="j_idt12"><input id="j_idt23" name="email"></form>
+        <div id="ctl00_ContentPlaceHolder1_Panel"><button id="ctl00_ContentPlaceHolder1_Button1" name="save">Save</button></div>
+        <div id="login-form">
+          <input id="input_4_27_6" name="phone">
+          <button id="payment__PONumber" name="po">PO</button>
+        </div>`);
+
+      for (const [target, ids] of [
+        ['textarea#id297', ['id297', 'id311']],
+        ['input#j_idt23', ['j_idt23', 'j_idt12']],
+        ['button#ctl00_ContentPlaceHolder1_Button1', ['ctl00_ContentPlaceHolder1_Button1', 'ctl00_ContentPlaceHolder1_Panel']],
+      ] as const) {
+        const collected = (await collect(page, target)).ranked.map(entry => entry.selector);
+        for (const id of ids)
+          expect(collected.join(' '), `no locator of ${target} may be anchored on #${id}`).not.toContain(id);
+        // Refusing them costs the step nothing: the name attribute is still collected.
+        expect(collected.some(selector => selector.includes('[name='))).toBe(true);
+        await assertAllResolve(page, target, collected);
+      }
+
+      // A digit-only segment is a name carrying a number; a short acronym is a word. Both
+      // are hand-written and stay - the counter shape needs digits interleaved with letters.
+      for (const [target, id] of [['input#input_4_27_6', 'input_4_27_6'], ['button#payment__PONumber', 'payment__PONumber']] as const) {
+        const collected = (await collect(page, target)).ranked.map(entry => entry.selector);
+        expect(collected.some(selector => selector.includes(`#${id}`))).toBe(true);
+        expect(collected.some(selector => selector.includes('login-form'))).toBe(true);
+      }
+    });
+
+    it('never empties a set to refuse a per-render id', async ({ page }) => {
+      await page.setContent(`<div id="id2f6"><span id="id323"></span></div>`);
+      const { ranked } = await collect(page, 'span#id323');
+      const collected = ranked.map(entry => entry.selector);
+      expect(collected.length).toBeGreaterThan(0);
+      await assertAllResolve(page, 'span#id323', collected);
+    });
+
     it('rescues a deep list item that had only its text', async ({ page }) => {
       await page.setContent(cards(30));
       const target = '[data-idx="28"] .card__link';
