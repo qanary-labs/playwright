@@ -135,6 +135,24 @@
   design: zazu's `docs/specs/self-healing.md`. Guarded by the `point` tests in
   `tests/library/inspector/recorder-api.spec.ts` and one in `hover-inference.spec.ts`.
 
+- **A click on a `<label>` records once** (`packages/injected/src/recorder/recorder.ts`,
+  `JsonRecordActionTool`). The browser follows a label click with a second click on the labelled
+  control (the label's activation behavior): trusted, dispatched in the same task, and in
+  Chromium and Firefox carrying the original `detail` and coordinates (WebKit zeroes `detail`), so
+  nothing on the event tells it apart. Upstream records it as a second action. Replayed, it clicks
+  the control again, where a floating label covering the input intercepts the pointer until the
+  step times out. On a checkbox or radio it becomes a spurious `check`/`uncheck`. After recording
+  a click whose composed path holds a label whose `control` is not on that path, the tool drops
+  the next click if it targets that control and arrives before a zero-delay timer fires. The
+  recorded label click re-creates the forwarded click natively on replay. This retires the fork's
+  earlier `checkbox && detail === 0` drop. That rule only matched WebKit's forwarded click, and
+  its one remaining effect was to lose keyboard toggles (Space, or arrow keys in a radio group,
+  which are `detail === 0`): every click reaching a checkbox/radio now records `check`/`uncheck`.
+  Full design: zazu's `docs/specs/label-click-recording.md`. Guarded by the label, checkbox and
+  radio tests in `tests/library/inspector/recorder-api.spec.ts` (forwarding per control kind,
+  implicit labels, floating label, hidden custom checkbox, radio group, and must-still-record
+  cases: direct clicks, a later user click, a prevented label default, keyboard toggles).
+
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its

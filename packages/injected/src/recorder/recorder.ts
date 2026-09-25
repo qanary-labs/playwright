@@ -772,6 +772,9 @@ class JsonRecordActionTool implements RecorderTool {
   // any click handler runs so we can recover the real target when an overlay or
   // re-render shifts the click event's target after mousedown (see onClick).
   private _pressTarget: HTMLElement | null = null;
+  // The control a just-recorded label click is about to forward a click to, for the
+  // duration of that click's task (see _expectLabelForwardedClick).
+  private _labelForwardTarget: Element | null = null;
   private _hoverInference: HoverInferenceEngine;
 
   constructor(recorder: Recorder) {
@@ -853,6 +856,8 @@ class JsonRecordActionTool implements RecorderTool {
   }
 
   onClick(event: MouseEvent) {
+    if (this._isLabelForwardedClick(event))
+      return;
     // in webkit, sliding a range element may trigger a click event with a different target if the mouse is released outside the element bounding box.
     // So we check the hovered element instead, and if it is a range input, we skip click handling
     const element = this._clickTarget(event);
@@ -864,17 +869,16 @@ class JsonRecordActionTool implements RecorderTool {
     if (this._shouldIgnoreMouseEvent(event))
       return;
 
+    // A click reaching a checkbox/radio here toggled it: a pointer click (detail 1, or 2 and
+    // up for each click of a multi-click) or a keyboard activation (Space, arrow keys in a
+    // radio group: detail 0). The click a <label> forwards to it never gets here (see
+    // _isLabelForwardedClick): the label click is recorded as a regular click, which on replay
+    // forwards to the input through the browser's native label semantics (works even when the
+    // input is visually hidden, as in Bootstrap custom-controls / MUI / shadcn checkboxes & radios).
     const checkbox = asCheckbox(element);
-    // A click on a <label> associated to a checkbox/radio fires twice: the user-initiated click on
-    // the label (detail===1), then a synthetic forwarded click on the input (detail===0). Drop the
-    // synthetic one — the label click is recorded as a regular click below, which on replay forwards
-    // to the input via the browser's native label semantics (works even when the input is visually
-    // hidden, as in Bootstrap custom-controls / MUI / shadcn checkboxes & radios).
-    if (checkbox && event.detail === 0)
-      return;
     const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
-    if (checkbox && event.detail === 1) {
+    if (checkbox) {
       // Interestingly, inputElement.checked is reversed inside this event handler.
       this._recordConfirmedAction({
         name: checkbox.checked ? 'check' : 'uncheck',
@@ -910,6 +914,32 @@ class JsonRecordActionTool implements RecorderTool {
       isInForm: isInForm,
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
     }, element);
+    this._expectLabelForwardedClick(event);
+  }
+
+  // A click on a <label> is followed by a second click, which the browser dispatches on the
+  // labelled control as the label's activation behavior — synchronously, in the same task,
+  // and trusted. Chromium and Firefox give it the original click's detail and coordinates
+  // (WebKit zeroes detail), so nothing on the event tells it apart. It is a consequence of the
+  // click just recorded, not a user action: replaying the label click re-creates it, and
+  // recording it too replays one click as two, the second aimed at a control the label may
+  // cover (floating labels). The browser forwards nothing when the click landed on the
+  // control itself, or when the label's default is prevented; the timer bounds the
+  // expectation to this task either way, so a later click on the control is always recorded.
+  private _expectLabelForwardedClick(event: MouseEvent) {
+    const path = event.composedPath();
+    const label = path.find(node => (node as Element).localName === 'label') as HTMLLabelElement | undefined;
+    const control = label?.control;
+    if (!control || path.includes(control))
+      return;
+    this._labelForwardTarget = control;
+    this._recorder.injectedScript.utils.builtins.setTimeout(() => this._labelForwardTarget = null, 0);
+  }
+
+  private _isLabelForwardedClick(event: MouseEvent): boolean {
+    const control = this._labelForwardTarget;
+    this._labelForwardTarget = null;
+    return !!control && this._recorder.deepEventTarget(event) === control;
   }
 
   onContextMenu(event: MouseEvent): void {

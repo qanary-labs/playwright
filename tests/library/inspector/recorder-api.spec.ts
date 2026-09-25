@@ -579,6 +579,249 @@ test('should still record a synthetic click echo when the trusted click was supp
   await recordedContext.close();
 });
 
+// Every recorded action as '<action> <first selector>', so a spurious check/uncheck shows
+// up as clearly as a spurious click.
+async function recordActions(context) {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const actions: string[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, selectors: { selector: string }[] }) => {
+    actions.push(`${payload.action} ${payload.selectors[0]?.selector}`);
+  });
+  return { recordedContext, actions };
+}
+
+// The forwarded click arrives within the same task as the label click, so once the label
+// click is in, a short settle is enough to prove nothing follows it.
+async function expectSettled(actions: string[], expected: string[]) {
+  await expect.poll(() => actions).toEqual(expected);
+  await new Promise(f => setTimeout(f, 300));
+  expect(actions).toEqual(expected);
+}
+
+for (const { name, control } of [
+  { name: 'text input', control: '<input id="c" type="text">' },
+  { name: 'textarea', control: '<textarea id="c"></textarea>' },
+  { name: 'button', control: '<button id="c" type="button">Go</button>' },
+  { name: 'checkbox', control: '<input id="c" type="checkbox">' },
+  { name: 'radio', control: '<input id="c" type="radio" name="r">' },
+]) {
+  test(`should record a click on the label of a ${name} once, not again on the control`, async ({ context }) => {
+    // A click on a <label> makes the browser dispatch a second, trusted click on the
+    // labelled control (the label's activation behavior). That click is a consequence of
+    // the one just recorded — replaying the label click re-creates it — so recording it
+    // too replays one user click as two, the second aimed at a control the label may cover.
+    // For a checkbox or radio the second click would surface as a check/uncheck step.
+    const { recordedContext, actions } = await recordActions(context);
+    const page = await recordedContext.newPage();
+    await page.setContent(`<label for="c">Title</label>${control}`);
+    await page.getByText('Title').click();
+
+    await expectSettled(actions, ['click internal:text="Title"i']);
+    await recordedContext.close();
+  });
+
+  test(`should record a click on a label wrapping a ${name} once`, async ({ context }) => {
+    // Implicit association: the browser forwards to the first labelable descendant.
+    const { recordedContext, actions } = await recordActions(context);
+    const page = await recordedContext.newPage();
+    await page.setContent(`<label><span>Title</span> ${control.replace(' id="c"', '')}</label>`);
+    await page.getByText('Title').click();
+
+    await expect.poll(() => actions).toHaveLength(1);
+    await new Promise(f => setTimeout(f, 300));
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatch(/^click /);
+    await recordedContext.close();
+  });
+}
+
+test('should record a click on a floating label covering its input once', async ({ context }) => {
+  // The shape found in production: the label sits over the input until the field is
+  // focused, so a replayed click on the input would be intercepted by the label.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <div style="position:relative;width:400px">
+      <label for="c" style="position:absolute;left:8px;top:12px;z-index:1">Give a title</label>
+      <input id="c" type="text" style="width:400px;height:48px">
+    </div>`);
+  expect(await page.locator('#c').evaluate(input => {
+    const box = input.getBoundingClientRect();
+    return document.elementFromPoint(box.left + 40, box.top + box.height / 2)?.localName;
+  })).toBe('label');
+  await page.getByText('Give a title').click();
+
+  await expectSettled(actions, ['click internal:text="Give a title"i']);
+  await recordedContext.close();
+});
+
+test('should record a click on the label of a visually hidden checkbox once', async ({ context }) => {
+  // Custom-control pattern: the real input is invisible and only the label is clicked.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <input id="c" type="checkbox" style="position:absolute;opacity:0;width:1px;height:1px">
+    <label for="c">Accept</label>`);
+  await page.getByText('Accept').click();
+
+  await expectSettled(actions, ['click internal:text="Accept"i']);
+  expect(await page.locator('#c').isChecked()).toBe(true);
+  await recordedContext.close();
+});
+
+test('should record a click on the label of a checked checkbox once when it unchecks it', async ({ context }) => {
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<input id="c" type="checkbox" checked><label for="c">Accept</label>`);
+  await page.getByText('Accept').click();
+
+  await expectSettled(actions, ['click internal:text="Accept"i']);
+  expect(await page.locator('#c').isChecked()).toBe(false);
+  await recordedContext.close();
+});
+
+test('should record clicks on radio labels in a group once each', async ({ context }) => {
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <input id="a" type="radio" name="g"><label for="a">Alpha</label>
+    <input id="b" type="radio" name="g"><label for="b">Beta</label>`);
+  await page.getByText('Alpha').click();
+  await page.getByText('Beta').click();
+
+  await expectSettled(actions, ['click internal:text="Alpha"i', 'click internal:text="Beta"i']);
+  await recordedContext.close();
+});
+
+test('should record a check and an uncheck for direct clicks on a checkbox', async ({ context }) => {
+  // No label involved: the checkbox branch records the state change, not a click.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Accept</label><input id="c" type="checkbox">`);
+  await page.locator('#c').click();
+  await page.locator('#c').click();
+
+  await expectSettled(actions, ['check internal:role=checkbox[name="Accept"i]', 'uncheck internal:role=checkbox[name="Accept"i]']);
+  await recordedContext.close();
+});
+
+test('should record a check for a direct click on a radio', async ({ context }) => {
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Alpha</label><input id="c" type="radio" name="g">`);
+  await page.locator('#c').click();
+
+  await expectSettled(actions, ['check internal:role=radio[name="Alpha"i]']);
+  await recordedContext.close();
+});
+
+test('should record a check for a direct click on a checkbox inside its label', async ({ context }) => {
+  // The browser forwards nothing when the click lands on the control itself.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label>Accept <input id="c" type="checkbox"></label>`);
+  await page.locator('#c').click();
+
+  await expectSettled(actions, ['check internal:role=checkbox[name="Accept"i]']);
+  await recordedContext.close();
+});
+
+test('should still record a click on a text input inside its label', async ({ context }) => {
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label>Title <input id="c" type="text"></label>`);
+  await page.locator('#c').click();
+
+  await expectSettled(actions, ['click internal:role=textbox[name="Title"i]']);
+  await recordedContext.close();
+});
+
+test('should still record a user click on the control right after a click on its label', async ({ context }) => {
+  // Two physical clicks, two recorded clicks: only the browser's forwarded click is dropped.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Title</label><input id="c" type="text">`);
+  await page.getByText('Title').click();
+  await page.locator('#c').click();
+
+  await expectSettled(actions, ['click internal:text="Title"i', 'click internal:role=textbox[name="Title"i]']);
+  await recordedContext.close();
+});
+
+test('should still record a click on the control when its label prevented the forwarding', async ({ context }) => {
+  // A label click whose default is prevented forwards nothing, so the next click on the
+  // control — here a keyboard activation, which carries no pointer — is the user's own.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <label for="c" onclick="event.preventDefault()">Title</label><button id="c" type="button">Go</button>`);
+  await page.getByText('Title').click();
+  await page.locator('#c').focus();
+  await page.keyboard.press('Enter');
+
+  await expect.poll(() => actions).toContain('click internal:role=button[name="Title"i]');
+  expect(actions[0]).toBe('click internal:text="Title"i');
+  await recordedContext.close();
+});
+
+test('should record a double click on a label without the forwarded clicks', async ({ context }) => {
+  // Each click of the pair is forwarded; only the label's own clicks are recorded, as a
+  // repeated click on the label (last-wins consumers keep the count of 2).
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Title</label><input id="c" type="text">`);
+  await page.getByText('Title').dblclick();
+
+  await expect.poll(() => actions.length).toBeGreaterThan(0);
+  await new Promise(f => setTimeout(f, 300));
+  expect(new Set(actions)).toEqual(new Set(['click internal:text="Title"i']));
+  await recordedContext.close();
+});
+
+test('should record a check for the keyboard toggle of a focused checkbox', async ({ context }) => {
+  // Space on a checkbox dispatches a trusted click with detail 0 and no pointer: it is the
+  // user's toggle and records as one, like a pointer click on the checkbox.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Accept</label><input id="c" type="checkbox">`);
+  await page.locator('#c').focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Space');
+
+  await expectSettled(actions, ['check internal:role=checkbox[name="Accept"i]', 'uncheck internal:role=checkbox[name="Accept"i]']);
+  await recordedContext.close();
+});
+
+test('should record a check for the keyboard selection of a radio', async ({ context }) => {
+  // Arrow keys move the selection within a radio group by clicking the next radio.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <input id="a" type="radio" name="g"><label for="a">Alpha</label>
+    <input id="b" type="radio" name="g"><label for="b">Beta</label>`);
+  await page.locator('#a').focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('ArrowRight');
+
+  await expect.poll(() => actions).toEqual(expect.arrayContaining(['check internal:role=radio[name="Alpha"i]', 'check internal:role=radio[name="Beta"i]']));
+  await new Promise(f => setTimeout(f, 300));
+  expect(actions.filter(a => !a.startsWith('press '))).toEqual(['check internal:role=radio[name="Alpha"i]', 'check internal:role=radio[name="Beta"i]']);
+  expect(await page.locator('#b').isChecked()).toBe(true);
+  await recordedContext.close();
+});
+
+test('should record a check and an uncheck for a double click on a checkbox', async ({ context }) => {
+  // Each click of the pair toggles the checkbox, so each records its state change.
+  const { recordedContext, actions } = await recordActions(context);
+  const page = await recordedContext.newPage();
+  await page.setContent(`<label for="c">Accept</label><input id="c" type="checkbox">`);
+  await page.locator('#c').dblclick();
+
+  await expectSettled(actions, ['check internal:role=checkbox[name="Accept"i]', 'uncheck internal:role=checkbox[name="Accept"i]']);
+  expect(await page.locator('#c').isChecked()).toBe(false);
+  await recordedContext.close();
+});
+
 test('should encode the mouse button and modifiers in the click value', async ({ context }) => {
   // The click value packs held modifiers and the mouse button as a '+'-separated
   // string with the button last, so a consumer can replay it straight back into
