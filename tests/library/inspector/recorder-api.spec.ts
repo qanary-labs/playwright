@@ -1097,3 +1097,98 @@ test('resolveAll is installed in child frames', async ({ context }) => {
   await expect.poll(() => resolveAll(frame, ['#inner'], 0, 't').catch(() => 'not installed yet')).toEqual({ matches: [{ id: 0, count: 1 }], ancestors: [[]] });
   await recordedContext.close();
 });
+
+// zazu's press-class-recording spec: a class the page adds while the element is pressed
+// describes the gesture, not the element. Replay resolves before the click, when the class
+// is not there yet, so a locator built on it is dead from the day it is recorded.
+async function recordClickSelectors(context, html: string, click: (page: Page) => Promise<void>, count = 1): Promise<string[][]> {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+  const page = await recordedContext.newPage();
+  await page.setContent(html);
+  await click(page);
+  await expect.poll(() => events.filter(e => e.action === 'click')).toHaveLength(count);
+  await recordedContext.close();
+  return events.filter(e => e.action === 'click').map(e => e.selectors.map((entry: any) => entry.selector));
+}
+
+test('leaves out a class the page adds to the clicked element on mousedown', async ({ context }) => {
+  // The roche-bobois shape: two buttons share their classes at rest, so the press class is
+  // what made a class combination unique to the pressed one.
+  const [selectors] = await recordClickSelectors(context, `
+    <div class="pos-s"><button class="btn-full add-to-cart" aria-label="Ajouter au panier">Ajouter au panier</button></div>
+    <button class="btn-full add-to-cart" aria-label="Ajouter au panier">Ajouter au panier</button>
+    <script>
+      for (const b of document.querySelectorAll('.add-to-cart'))
+        b.addEventListener('mousedown', () => b.classList.add('click-hide-focus'));
+    </script>`, page => page.locator('.pos-s button').click());
+  expect(selectors.length).toBeGreaterThan(0);
+  expect(selectors.filter(s => s.includes('click-hide-focus'))).toEqual([]);
+});
+
+test('leaves out a press class in the structural fallback too', async ({ context }) => {
+  // Elements with no role, text or attribute fall back to CSS paths, a second place classes
+  // are read.
+  const [selectors] = await recordClickSelectors(context, `
+    <span class="tile" style="display:inline-block;width:40px;height:40px"></span>
+    <span class="tile" style="display:inline-block;width:40px;height:40px"></span>
+    <script>
+      for (const t of document.querySelectorAll('.tile'))
+        t.addEventListener('mousedown', () => t.classList.add('tile--pressed'));
+    </script>`, page => page.locator('.tile').first().click());
+  expect(selectors.length).toBeGreaterThan(0);
+  expect(selectors.filter(s => s.includes('tile--pressed'))).toEqual([]);
+});
+
+test('leaves out a class the page adds to an ancestor of the clicked element on mousedown', async ({ context }) => {
+  // Chains are collected for a target that is unique on its own; the wrapper becomes a
+  // unique anchor only through its press class, so that is the chain it must not get.
+  const [selectors] = await recordClickSelectors(context, `
+    <div class="wrap"><button>Go</button></div>
+    <div class="wrap"><button>Stop</button></div>
+    <script>
+      for (const b of document.querySelectorAll('button'))
+        b.addEventListener('mousedown', () => b.closest('.wrap').classList.add('is-active'));
+    </script>`, page => page.getByRole('button', { name: 'Go' }).click());
+  expect(selectors.length).toBeGreaterThan(0);
+  expect(selectors.filter(s => s.includes('is-active'))).toEqual([]);
+});
+
+test('keeps the classes an element had before the press', async ({ context }) => {
+  const [selectors] = await recordClickSelectors(context, `
+    <button class="only-me">One</button>
+    <button class="other">Two</button>`, page => page.getByRole('button', { name: 'One' }).click());
+  expect(selectors.some(s => s.includes('only-me'))).toBe(true);
+});
+
+test('keeps a class toggled during the press that the element had before it', async ({ context }) => {
+  // The page removes `ready` on pointerdown and puts it back on mousedown: the snapshot is
+  // taken before the page's own pointerdown handlers run, so it holds `ready`.
+  const [selectors] = await recordClickSelectors(context, `
+    <span class="ready" style="display:inline-block;width:40px;height:40px"></span>
+    <span style="display:inline-block;width:40px;height:40px"></span>
+    <script>
+      const ready = document.querySelector('.ready');
+      ready.addEventListener('pointerdown', () => ready.classList.remove('ready'));
+      ready.addEventListener('mousedown', () => ready.classList.add('ready'));
+    </script>`, page => page.locator('.ready').click());
+  expect(selectors.some(s => s.includes('ready'))).toBe(true);
+});
+
+test('takes the snapshot per press: a class kept from an earlier press is part of the element at the next one', async ({ context }) => {
+  // The first press adds `was-pressed` and the page keeps it. At the second press it is
+  // the element's state at rest, so the second click may use it, and the first may not.
+  const [first, second] = await recordClickSelectors(context, `
+    <button class="btn">Save</button>
+    <button class="btn">Save</button>
+    <script>
+      const b = document.querySelector('.btn');
+      b.addEventListener('mousedown', () => b.classList.add('was-pressed'));
+    </script>`, async page => {
+    await page.getByRole('button', { name: 'Save' }).first().click();
+    await page.getByRole('button', { name: 'Save' }).first().click();
+  }, 2);
+  expect(first.filter(s => s.includes('was-pressed'))).toEqual([]);
+  expect(second.some(s => s.includes('was-pressed'))).toBe(true);
+});

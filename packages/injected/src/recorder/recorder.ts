@@ -26,6 +26,7 @@ import type { Highlight, HighlightEntry } from '../highlight';
 import type { InjectedScript } from '../injectedScript';
 import type { ElementText } from '../selectorUtils';
 import type { GenerateSelectorOptions } from '../selectorGenerator';
+import type { PressClasses } from '../selectorCollector';
 import type * as actions from '@recorder/actions';
 import type { ElementInfo, Mode, OverlayState, UIState } from '@recorder/recorderTypes';
 import type { Language } from '@isomorphic/locatorGenerators';
@@ -772,6 +773,10 @@ class JsonRecordActionTool implements RecorderTool {
   // any click handler runs so we can recover the real target when an overlay or
   // re-render shifts the click event's target after mousedown (see onClick).
   private _pressTarget: HTMLElement | null = null;
+  // The class lists of the press target and its ancestors at that moment, before the
+  // page's mousedown handlers ran: classes gained since describe the gesture, so the
+  // click's selectors leave them out (zazu's press-class-recording spec).
+  private _pressClasses: PressClasses | undefined;
   // The control a just-recorded label click is about to forward a click to, for the
   // duration of that click's task (see _expectLabelForwardedClick).
   private _labelForwardTarget: Element | null = null;
@@ -846,16 +851,26 @@ class JsonRecordActionTool implements RecorderTool {
 
   onPointerDown(event: PointerEvent) {
     if (event.button === 0)
-      this._pressTarget = this._recorder.deepEventTarget(event);
+      this._press(this._recorder.deepEventTarget(event));
   }
 
   onMouseDown(event: MouseEvent) {
     // Fallback for environments that do not dispatch pointer events.
     if (event.button === 0 && !this._pressTarget)
-      this._pressTarget = this._recorder.deepEventTarget(event);
+      this._press(this._recorder.deepEventTarget(event));
+  }
+
+  private _press(target: HTMLElement) {
+    this._pressTarget = target;
+    this._pressClasses = new Map();
+    // The composed ancestor chain, the one the selector generator walks.
+    for (let element: Element | null = target; element; element = element.parentElement ?? (element.parentNode as ShadowRoot | null)?.host ?? null)
+      this._pressClasses.set(element, new Set(element.classList));
   }
 
   onClick(event: MouseEvent) {
+    const pressClasses = this._pressClasses;
+    this._pressClasses = undefined;
     if (this._isLabelForwardedClick(event))
       return;
     // in webkit, sliding a range element may trigger a click event with a different target if the mouse is released outside the element bounding box.
@@ -876,7 +891,7 @@ class JsonRecordActionTool implements RecorderTool {
     // forwards to the input through the browser's native label semantics (works even when the
     // input is visually hidden, as in Bootstrap custom-controls / MUI / shadcn checkboxes & radios).
     const checkbox = asCheckbox(element);
-    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
+    const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element, pressClasses);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
     if (checkbox) {
       // Interestingly, inputElement.checked is reversed inside this event handler.
@@ -1149,11 +1164,11 @@ class JsonRecordActionTool implements RecorderTool {
     return false;
   }
 
-  private _ariaSnapshot(element: HTMLElement): { ariaSnapshot: string, selector: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement };
-  private _ariaSnapshot(element: HTMLElement | undefined): { ariaSnapshot: string, selector?: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement } {
+  private _ariaSnapshot(element: HTMLElement, pressClasses?: PressClasses): { ariaSnapshot: string, selector: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement };
+  private _ariaSnapshot(element: HTMLElement | undefined, pressClasses?: PressClasses): { ariaSnapshot: string, selector?: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement } {
     const { ariaSnapshot, refs } = this._recorder.injectedScript.ariaSnapshotForRecorder();
     const ref = element ? refs.get(element) : undefined;
-    const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName }) : undefined;
+    const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName, pressClasses }) : undefined;
     // The generator keeps upstream's names - `selectors` is its unscored shortlist. An
     // action carries the scored set instead, under the name the recorder API exposes.
     return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.rankedSelectors, ref, retargeted: elementInfo?.elements?.[0] as HTMLElement | undefined };
