@@ -21,6 +21,7 @@ import { cacheNormalizedWhitespaces, normalizeWhiteSpace, trimStringWithEllipsis
 
 import { generateAriaTree, getAllElementsMatchingExpectAriaTemplate, matchesExpectAriaTemplate, renderAriaTree, findNewElement } from './ariaSnapshot';
 import { coveredTargetHref } from './coveredTarget';
+import { emptyLabelControl, emptyLabelHit } from './emptyLabel';
 import { beginDOMCaches, enclosingShadowRootOrDocument, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost, setGlobalOptions } from './domUtils';
 import { Highlight } from './highlight';
 import { kLayoutSelectorNames, layoutSelectorScore } from './layoutSelectorUtils';
@@ -1064,6 +1065,19 @@ export class InjectedScript {
     if (!element)
       return null;
     return coveredTargetHref(element, this.hitTargetChain(hitPoint, element));
+  }
+
+  // Empty-label click fallback, see emptyLabel.ts. The control a click on this empty label
+  // may land on, scrolled to the center of the view, or undefined when the guards refuse.
+  emptyLabelControl(node: Node): Element | undefined {
+    const control = emptyLabelControl(node);
+    control?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    return control;
+  }
+
+  // Whether the browser's hit at `hitPoint` is the label or its control.
+  emptyLabelHit(hitPoint: { x: number, y: number }, label: Element, control: Element): boolean {
+    return emptyLabelHit(this.hitTargetChain(hitPoint, label), control);
   }
 
   // Life of a pointer action, for example click.

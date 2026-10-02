@@ -266,8 +266,8 @@
   `tests/library/selector-generator.spec.ts` plus three payload/API tests in
   `tests/library/inspector/recorder-api.spec.ts`.
 
-- **Covered-target substitution inside `click`** — the fork's one change to what `click` may
-  click, and its only change to `click` at all. Some interactive tiles stack sibling anchors
+- **Covered-target substitution inside `click`** — one of the fork's changes to what `click` may
+  click (see also the two label entries after this one). Some interactive tiles stack sibling anchors
   that all navigate to the same URL and reveal one above the others on hover. Clicking requires
   moving the mouse onto the element, which is what reveals the cover, so the click creates its
   own interceptor: every retry re-hovers and the hit-target check fails again. A real user never
@@ -348,6 +348,40 @@
   there, refusals assert an empty click log *and* a failure on the caller's timeout, and every
   fixture is hover-revealed because a cover present at rest would refuse without the guards
   being consulted at all.
+
+- **A click on a hidden checkbox or radio goes to its label** (`server/dom.ts`, `_click`, since
+  2026-06-11). Custom checkboxes hide the real input (`opacity: 0`, zero size, `visibility:
+  hidden` or `display: none`) and let the user click its label, which the browser forwards to the
+  input. When a click targets such an input, has a label, and that label holds no interactive
+  descendant (links, buttons, form fields, `[onclick]`) that would take the click, `_click` acts
+  on the label instead. Upstream fails on the hidden input until its timeout.
+
+- **A click on an empty label lands where its control is drawn** (`server/dom.ts`, `_retryAction`
+  and `_click`, `_clickEmptyLabel`; guards in `packages/injected/src/emptyLabel.ts`, exposed as
+  `emptyLabelControl`/`emptyLabelHit` in `injectedScript.ts`). Some switches are drawn entirely
+  by CSS on an empty label (Bootstrap's custom-switch: `::before` is the track, `::after` the
+  knob, the real checkbox under it at `opacity: 0`). Pseudo-elements give the label no box, so it
+  is "not visible", and the redirect above sends a click on the checkbox to that same label:
+  nothing of the control can be clicked, where a user's click lands on the drawn switch. Full
+  design: zazu's `docs/specs/empty-label-click-fallback.md`.
+
+  Same discipline as the covered-target substitution, and disjoint from it. `_retryAction`
+  counts consecutive "not visible" attempts, in both forms the loop produces (the element-state
+  check's `{ missingState: 'visible' }` and the click point's `error:notvisible`). Any other
+  result or a locator handler running resets the count. Once it passes `scrollAlignments.length`
+  (about 220 ms), the recovery is offered once, for plain left single clicks only. Guards, all
+  required: the target is a `<label>` with an empty box, visible with its subtree
+  (`checkVisibility`) and not inside a link or a button (a link is the covered-target fallback's
+  case); it has a `control` that is not disabled; the control has a box; the browser's hit chain
+  at the control's center (`hitTargetChain`, after `_checkFrameIsHitTarget`'s frame translation)
+  is the label or the control. Then a real mouse click there, trusted events, and the browser's
+  own label activation does the rest. Never a synthetic `dispatchEvent`. A refusal leaves the
+  loop and its final error unchanged.
+
+  Guarded by `tests/page/click-empty-label.spec.ts` (switch, toggling back, through the redirect,
+  radio; refusals: covered switch, control without a box, disabled control, non-plain clicks,
+  label inside a link; restraint: a label getting its box while waiting is clicked normally; and
+  one page carrying both this fallback and a covered target, each clicked through its own path).
 
 ## Installation
 

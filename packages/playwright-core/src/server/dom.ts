@@ -332,7 +332,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     };
   }
 
-  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined> }): Promise<'error:notconnected' | 'done'> {
+  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> }): Promise<'error:notconnected' | 'done'> {
     let retry = 0;
     // We progressively wait longer between retries, up to 500ms.
     const waitTime = [0, 20, 100, 100, 500];
@@ -347,6 +347,11 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     let interceptionRevealedUnderPointer = false;
     let consecutiveInterceptions = 0;
     let recoveryAttempted = false;
+    // Fork addition (see CUSTOM.md): the same restraint for a target that stays "not visible"
+    // because it is an empty label whose control is drawn by CSS. Only a run of such attempts
+    // means the label will not get a box on its own; any other result starts it over.
+    let consecutiveNotVisible = 0;
+    let emptyLabelRecoveryAttempted = false;
 
     while (true) {
       if (retry) {
@@ -369,6 +374,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
           interceptionRevealedUnderPointer = false;
           consecutiveInterceptions = 0;
           recoveryAttempted = false;
+          consecutiveNotVisible = 0;
+          emptyLabelRecoveryAttempted = false;
         }
       }
       const result = await action(progress, retry);
@@ -377,6 +384,21 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
         interceptionRevealedUnderPointer = false;
         consecutiveInterceptions = 0;
         recoveryAttempted = false;
+      }
+      // "Not visible" comes either from the element-state check or from the click point.
+      const notVisible = result === 'error:notvisible' || (typeof result === 'object' && 'missingState' in result && result.missingState === 'visible');
+      if (!notVisible) {
+        consecutiveNotVisible = 0;
+        emptyLabelRecoveryAttempted = false;
+      } else if (!options.force && !noAutoWaiting) {
+        ++consecutiveNotVisible;
+        // As long as the interception restraint: a label still rendering gets the time to
+        // receive a box, and the click it then makes is the one that was asked for.
+        if (!emptyLabelRecoveryAttempted && consecutiveNotVisible > scrollAlignments.length) {
+          emptyLabelRecoveryAttempted = true;
+          if (await options.recoverFromEmptyLabel?.(progress) === 'done')
+            return 'done';
+        }
       }
       if (result === 'error:notvisible') {
         if (options.force || noAutoWaiting)
@@ -431,7 +453,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _retryPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (progress: Progress, point: types.Point) => Promise<void>,
-    options: { waitAfter: boolean | 'disabled', recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined> } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    options: { waitAfter: boolean | 'disabled', recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     // Note: do not perform locator handlers checkpoint to avoid moving the mouse in the middle of a drag operation.
     const skipActionPreChecks = actionName === 'move and up';
     return await this._retryAction(progress, actionName, async (progress, retry) => {
@@ -672,7 +694,46 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     return target._retryPointerAction(progress, 'click', true /* waitForEnabled */, (progress, point) => this._page.mouse.click(progress, point.x, point.y, options), {
       ...options,
       recoverFromUnreachableTarget: plainLeftSingleClick ? (progress, interception) => target._clickCoveredTarget(progress, interception) : undefined,
+      // Empty-label fallback (fork addition, see CUSTOM.md): same gate. A double click would
+      // toggle the control twice, a modifier click means something else. Its guards refuse
+      // any target that is not an empty label, the redirected one above included.
+      recoverFromEmptyLabel: plainLeftSingleClick ? progress => target._clickEmptyLabel(progress) : undefined,
     });
+  }
+
+  // Empty-label fallback, the recovery _click hands to _retryAction for a target that stays
+  // "not visible". A switch drawn by CSS on an empty label (Bootstrap's custom-switch) leaves
+  // no clickable element: the label has no box, the checkbox under it is at opacity 0. The
+  // user's click lands on the drawn switch, over the checkbox, and hit-tests as the label.
+  // So this clicks the control's center for real, once the browser confirms the label or the
+  // control is what sits there (see injected emptyLabel.ts for the guards).
+  private async _clickEmptyLabel(progress: Progress): Promise<'done' | undefined> {
+    const controlHandle = await progress.race(this._evaluateHandleInUtility(([injected, node]) => injected.emptyLabelControl(node), {}));
+    if (controlHandle === 'error:notconnected')
+      return;
+    const control = controlHandle.asElement() as ElementHandle<Element> | null;
+    if (!control) {
+      controlHandle.dispose();
+      return;
+    }
+    try {
+      const box = await control.boundingBox(progress);
+      if (!box || !box.width || !box.height)
+        return;
+      const point = roundPoint({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+      const frameCheckResult = await this._checkFrameIsHitTarget(progress, point);
+      // A hit point that cannot be translated (transformed iframe) cannot be verified.
+      if (frameCheckResult === 'error:notconnected' || 'hitTargetDescription' in frameCheckResult || !frameCheckResult.framePoint)
+        return;
+      const hits = await progress.race(this.evaluateInUtility(([injected, label, { hitPoint, control }]) => injected.emptyLabelHit(hitPoint, label as unknown as Element, control), { hitPoint: frameCheckResult.framePoint, control }));
+      if (hits !== true)
+        return;
+      progress.log(`  the label has no box; clicking where its control is drawn instead`);
+      await this._page.mouse.click(progress, point.x, point.y);
+      return 'done';
+    } finally {
+      control.dispose();
+    }
   }
 
   // Covered-target substitution, the recovery _click hands to _retryAction. Some tiles stack
