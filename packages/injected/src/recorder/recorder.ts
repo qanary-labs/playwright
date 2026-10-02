@@ -26,7 +26,7 @@ import type { Highlight, HighlightEntry } from '../highlight';
 import type { InjectedScript } from '../injectedScript';
 import type { ElementText } from '../selectorUtils';
 import type { GenerateSelectorOptions } from '../selectorGenerator';
-import type { PressClasses } from '../selectorCollector';
+import type { RestClasses } from '../selectorCollector';
 import type * as actions from '@recorder/actions';
 import type { ElementInfo, Mode, OverlayState, UIState } from '@recorder/recorderTypes';
 import type { Language } from '@isomorphic/locatorGenerators';
@@ -767,16 +767,25 @@ class RecordActionTool implements RecorderTool {
   }
 }
 
+// The element and its composed-tree ancestors, the walk the selector generator does. Written
+// inline: recorder modules reach injected helpers only through injectedScript.utils.
+function composedChain(element: Element | null): Element[] {
+  const chain: Element[] = [];
+  for (; element; element = element.parentElement ?? (element.parentNode as ShadowRoot | null)?.host ?? null)
+    chain.push(element);
+  return chain;
+}
+
 class JsonRecordActionTool implements RecorderTool {
   private _recorder: Recorder;
   // Element under the pointer when the primary button went down. Captured before
   // any click handler runs so we can recover the real target when an overlay or
   // re-render shifts the click event's target after mousedown (see onClick).
   private _pressTarget: HTMLElement | null = null;
-  // The class lists of the press target and its ancestors at that moment, before the
-  // page's mousedown handlers ran: classes gained since describe the gesture, so the
-  // click's selectors leave them out (zazu's press-class-recording spec).
-  private _pressClasses: PressClasses | undefined;
+  // The class lists of the press target and its ancestors at rest: when the pointer entered
+  // them, or at the press for those it had not. Classes gained since describe the gesture,
+  // so the click's selectors leave them out (zazu's press-class-recording spec).
+  private _pressClasses: RestClasses | undefined;
   // The control a just-recorded label click is about to forward a click to, for the
   // duration of that click's task (see _expectLabelForwardedClick).
   private _labelForwardTarget: Element | null = null;
@@ -862,10 +871,9 @@ class JsonRecordActionTool implements RecorderTool {
 
   private _press(target: HTMLElement) {
     this._pressTarget = target;
-    this._pressClasses = new Map();
-    // The composed ancestor chain, the one the selector generator walks.
-    for (let element: Element | null = target; element; element = element.parentElement ?? (element.parentNode as ShadowRoot | null)?.host ?? null)
-      this._pressClasses.set(element, new Set(element.classList));
+    // Classes added on hover were taken away by the snapshot at pointer entry; the rest of
+    // the chain is snapshotted now, before the page's mousedown handlers.
+    this._pressClasses = this._recorder.restClassesFor(target, true);
   }
 
   onClick(event: MouseEvent) {
@@ -1164,11 +1172,11 @@ class JsonRecordActionTool implements RecorderTool {
     return false;
   }
 
-  private _ariaSnapshot(element: HTMLElement, pressClasses?: PressClasses): { ariaSnapshot: string, selector: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement };
-  private _ariaSnapshot(element: HTMLElement | undefined, pressClasses?: PressClasses): { ariaSnapshot: string, selector?: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement } {
+  private _ariaSnapshot(element: HTMLElement, pressClasses?: RestClasses): { ariaSnapshot: string, selector: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement };
+  private _ariaSnapshot(element: HTMLElement | undefined, pressClasses?: RestClasses): { ariaSnapshot: string, selector?: string, selectors?: actions.RankedSelector[], ref?: string, retargeted?: HTMLElement } {
     const { ariaSnapshot, refs } = this._recorder.injectedScript.ariaSnapshotForRecorder();
     const ref = element ? refs.get(element) : undefined;
-    const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName, pressClasses }) : undefined;
+    const elementInfo = element ? this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName, restClasses: pressClasses }) : undefined;
     // The generator keeps upstream's names - `selectors` is its unscored shortlist. An
     // action carries the scored set instead, under the name the recorder API exposes.
     return { ariaSnapshot, selector: elementInfo?.selector, selectors: elementInfo?.rankedSelectors, ref, retargeted: elementInfo?.elements?.[0] as HTMLElement | undefined };
@@ -1674,6 +1682,8 @@ export class Recorder {
   // re-dispatch of the same click (cookie-consent / outbound-link trackers that
   // intercept, beacon, and re-fire via element.click()). See _onClick().
   private _lastTrustedClickAt = 0;
+  // Class lists at rest of the elements under the pointer, see _onPointerOver.
+  private _restClasses: RestClasses = new Map();
   private _lastTrustedClickPath: EventTarget[] = [];
   // Set once the trusted click for the current anchor has been recorded, so a
   // later synthetic re-dispatch is treated as a duplicate rather than an echo to
@@ -1751,6 +1761,7 @@ export class Recorder {
       addEventListener(this.document, 'mousemove', event => this._onMouseMove(event as MouseEvent), true),
       addEventListener(this.document, 'mouseleave', event => this._onMouseLeave(event as MouseEvent), true),
       addEventListener(this.document, 'mouseenter', event => this._onMouseEnter(event as MouseEvent), true),
+      addEventListener(this.document, 'pointerover', event => this._onPointerOver(event as PointerEvent), true),
       addEventListener(this.document, 'focus', event => this._onFocus(event), true),
       addEventListener(this.document, 'scroll', event => this._onScroll(event), true),
     ];
@@ -1932,6 +1943,59 @@ export class Recorder {
     this._currentTool.onDragStart?.(event);
   }
 
+  // Snapshot at rest (zazu's press-class-recording spec, hover part): each element on the
+  // pointer's composed chain keeps the class list it had when the pointer entered it. Pointer
+  // events fire before their mouse counterparts and this listener captures on the document,
+  // so it reads the element before the page's mouseover/mouseenter handlers change it.
+  // Elements the pointer left are dropped: coming back takes a fresh snapshot.
+  //
+  // A page may re-render what the pointer is on in reaction to the hover (ngx-bootstrap's
+  // date picker rebuilds its rows, the hovered day included): the new node arrives already
+  // carrying the hover class. Chromium fires a fresh pointerover on it, WebKit only once the
+  // pointer moves again, so both this listener and restClassesFor look it up the same way.
+  private _onPointerOver(event: PointerEvent) {
+    if (!event.isTrusted)
+      return;
+    const chain = composedChain(this.deepEventTarget(event));
+    const restClasses: RestClasses = new Map();
+    chain.forEach((element, index) => restClasses.set(element, this._atRest(chain, index) ?? new Set(element.classList)));
+    this._restClasses = restClasses;
+  }
+
+  // The snapshot at rest of chain[index]: its own, or, for a node the page created since, the
+  // one of the node it replaced: the node at the same depth on the snapshotted chain, now
+  // disconnected, with the same tag. Inheriting can only leave out more classes.
+  private _atRest(chain: Element[], index: number): Set<string> | undefined {
+    const element = chain[index];
+    const own = this._restClasses.get(element);
+    if (own)
+      return own;
+    const snapshotted = [...this._restClasses.keys()];
+    const replaced = snapshotted[snapshotted.length - chain.length + index];
+    if (replaced && !replaced.isConnected && replaced.localName === element.localName)
+      return this._restClasses.get(replaced);
+    return undefined;
+  }
+
+  private _refreshRestClasses() {
+    for (const element of this._restClasses.keys())
+      this._restClasses.set(element, new Set(element.classList));
+  }
+
+  // The classes at rest of `target` and its composed ancestors, for generation to keep. An
+  // element the pointer never entered gets its current classes when `fallbackToCurrent`
+  // (the press: nothing happened to it yet), and no entry otherwise (read as it is).
+  restClassesFor(target: Element, fallbackToCurrent: boolean): RestClasses {
+    const restClasses: RestClasses = new Map();
+    const chain = composedChain(target);
+    chain.forEach((element, index) => {
+      const atRest = this._atRest(chain, index) ?? (fallbackToCurrent ? new Set(element.classList) : undefined);
+      if (atRest)
+        restClasses.set(element, atRest);
+    });
+    return restClasses;
+  }
+
   private _onPointerDown(event: PointerEvent) {
     if (!event.isTrusted)
       return;
@@ -2103,6 +2167,10 @@ export class Recorder {
 
   async recordAction(action: actions.Action) {
     this._lastActionAutoexpectSnapshot = this._captureAutoExpectSnapshot();
+    // Replay leaves the pointer where this action left it, as the user did: once the action is
+    // done, including the page's own handlers for it, the chain under the pointer is at rest
+    // for the next step (zazu's press-class-recording spec, hover part).
+    this.injectedScript.utils.builtins.setTimeout(() => this._refreshRestClasses(), 0);
     await this._delegate.recordAction?.(action);
   }
 

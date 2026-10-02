@@ -59,16 +59,17 @@ export const kMaxAnchorsPerCandidate = 2;
 const kAttributeValueMaxLength = 80;
 const kMaxClassTokens = 4;
 
-// Classes an element gained while it was being pressed (zazu's press-class-recording
-// spec). The recorder snapshots the class list of the press target and its composed
-// ancestors at pointerdown; a class missing from an element's snapshot describes the
-// gesture - a focus-ring suppressor, an `is-pressed` state - not the element, and replay
-// resolves before the click, when it is not there yet. Elements outside the snapshot are
-// read as they are.
-export type PressClasses = Map<Element, Set<string>>;
+// Classes an element had at rest (zazu's press-class-recording spec). The recorder
+// snapshots the class list of each element on the pointer's chain when the pointer enters
+// it, and of the press target's chain at pointerdown; a class missing from an element's
+// snapshot was gained during the gesture - an `is-highlighted` hover state, a focus-ring
+// suppressor, an `is-pressed` state - and describes it, not the element. Replay resolves
+// before the action moves the pointer there, when it is not there yet. Elements outside
+// the snapshot are read as they are.
+export type RestClasses = Map<Element, Set<string>>;
 
-export function isPressClass(pressClasses: PressClasses | undefined, element: Element, className: string): boolean {
-  const atRest = pressClasses?.get(element);
+export function isGestureClass(restClasses: RestClasses | undefined, element: Element, className: string): boolean {
+  const atRest = restClasses?.get(element);
   return !!atRest && !atRest.has(className);
 }
 // Above this, a mixed-case name is long enough to be spelling words rather than hashing.
@@ -101,7 +102,7 @@ export class SelectorCollector {
   private _order = 0;
   private _max: number;
 
-  constructor(max: number | undefined, private _join: (tokens: CollectorToken[]) => string, private _combine: (tokens: CollectorToken[]) => number, private _pressClasses?: PressClasses) {
+  constructor(max: number | undefined, private _join: (tokens: CollectorToken[]) => string, private _combine: (tokens: CollectorToken[]) => number, private _restClasses?: RestClasses) {
     this._max = Math.max(1, max ?? kDefaultMaxSelectors);
   }
 
@@ -148,7 +149,7 @@ export class SelectorCollector {
   anchorTokensFor(injectedScript: InjectedScript, anchor: Element, parentTokens: CollectorToken[], root: Element | Document | undefined): CollectorToken[] | null {
     let best = parentTokens;
     let bestScore = this._combine(parentTokens);
-    for (const token of collectOnlyTokens(injectedScript, anchor, root, this._pressClasses)) {
+    for (const token of collectOnlyTokens(injectedScript, anchor, root, this._restClasses)) {
       const score = this._combine([token]);
       if (score < bestScore) {
         best = [token];
@@ -168,7 +169,7 @@ export class SelectorCollector {
   // Candidates the engine has no notion of, built from the target element alone.
   // Collect-only by construction: they are never handed back to the generator.
   addCollectOnlyCandidates(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined) {
-    for (const token of collectOnlyTokens(injectedScript, element, root, this._pressClasses))
+    for (const token of collectOnlyTokens(injectedScript, element, root, this._restClasses))
       this.add([token]);
   }
 
@@ -386,7 +387,7 @@ function buildAttributeTokens(element: Element): CollectorToken[] {
 // engine ignores (notably non-testid `data-*` and `href`) and a unique class. Verified
 // here rather than at build time because anchors are chosen from these before the
 // emitted set exists.
-function collectOnlyTokens(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined, pressClasses: PressClasses | undefined): CollectorToken[] {
+function collectOnlyTokens(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined, restClasses: RestClasses | undefined): CollectorToken[] {
   const tokens: CollectorToken[] = [];
   const scope: Node = root ?? element.ownerDocument;
   const resolvesAlone = (selector: string) => {
@@ -401,15 +402,15 @@ function collectOnlyTokens(injectedScript: InjectedScript, element: Element, roo
     if (resolvesAlone(token.selector))
       tokens.push(token);
   }
-  const classToken = uniqueClassToken(injectedScript, element, root, pressClasses);
+  const classToken = uniqueClassToken(injectedScript, element, root, restClasses);
   if (classToken)
     tokens.push(classToken);
   return tokens;
 }
 
 // Shortest class combination that resolves to this element alone, or null.
-function uniqueClassToken(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined, pressClasses: PressClasses | undefined): CollectorToken | null {
-  const classes = [...element.classList].filter(name => !isPressClass(pressClasses, element, name)).slice(0, kMaxClassTokens)
+function uniqueClassToken(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined, restClasses: RestClasses | undefined): CollectorToken | null {
+  const classes = [...element.classList].filter(name => !isGestureClass(restClasses, element, name)).slice(0, kMaxClassTokens)
       .map(escapeClassName).filter(name => name && !isGeneratedClassName(name));
   const scope: Node = root ?? element.ownerDocument;
   for (let i = 0; i < classes.length; ++i) {

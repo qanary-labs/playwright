@@ -18,11 +18,11 @@ import { escapeForAttributeSelector, escapeForTextSelector, escapeRegExp, quoteC
 
 import { beginDOMCaches, closestCrossShadow, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost } from './domUtils';
 import { beginAriaCaches, endAriaCaches, getAriaRole, getElementAccessibleDescription, getElementAccessibleName } from './roleUtils';
-import { isPressClass, kMaxAnchorAncestors, kMaxAnchorsPerCandidate, SelectorCollector } from './selectorCollector';
+import { isGestureClass, kMaxAnchorAncestors, kMaxAnchorsPerCandidate, SelectorCollector } from './selectorCollector';
 import { elementText, getElementLabels } from './selectorUtils';
 
 import type { InjectedScript } from './injectedScript';
-import type { CollectedSelector, PressClasses } from './selectorCollector';
+import type { CollectedSelector, RestClasses } from './selectorCollector';
 
 type SelectorToken = {
   engine: string;
@@ -77,8 +77,8 @@ export type GenerateSelectorOptions = {
   collectSelectors?: boolean;
   // Qanary fork: how many selectors collection may emit (see selectorCollector.ts).
   maxSelectors?: number;
-  // Qanary fork: classes gained during the press are not read (see selectorCollector.ts).
-  pressClasses?: PressClasses;
+  // Qanary fork: classes gained during the hover or the press are not read (see selectorCollector.ts).
+  restClasses?: RestClasses;
 };
 
 export type SelectorSuggestionType = 'role' | 'label' | 'text' | 'testId' | 'attr' | 'css' | 'cssNoId';
@@ -92,7 +92,7 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
     const suggestionStore = options.collectSelectors ? new Map<SelectorSuggestionType, { tokens: SelectorToken[], score: number }>() : null;
     // Qanary fork: the wider, scored set. Text expectations deliberately emit a single
     // selector, so they are not collected for.
-    const collector = options.collectSelectors && !options.forTextExpect ? new SelectorCollector(options.maxSelectors, joinTokens, combineScores, options.pressClasses) : null;
+    const collector = options.collectSelectors && !options.forTextExpect ? new SelectorCollector(options.maxSelectors, joinTokens, combineScores, options.restClasses) : null;
     const considerSuggestion = (tokens: SelectorToken[] | null) => {
       if (!suggestionStore || !tokens)
         return;
@@ -541,7 +541,7 @@ function cssFallback(injectedScript: InjectedScript, targetElement: Element, opt
     const parent = element.parentNode as (Element | ShadowRoot);
 
     // Combine class names until unique.
-    const classes = [...element.classList].filter(name => !isPressClass(options.pressClasses, element, name)).map(escapeClassName);
+    const classes = [...element.classList].filter(name => !isGestureClass(options.restClasses, element, name)).map(escapeClassName);
     for (let i = 0; i < classes.length; ++i) {
       const token = '.' + classes.slice(0, i + 1).join('.');
       const selector = uniqueCSSSelector(token);

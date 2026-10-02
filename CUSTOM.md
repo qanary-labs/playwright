@@ -153,19 +153,34 @@
   implicit labels, floating label, hidden custom checkbox, radio group, and must-still-record
   cases: direct clicks, a later user click, a prevented label default, keyboard toggles).
 
-- **A click's selectors leave out classes the press added** (`packages/injected/src/recorder/recorder.ts`,
-  `JsonRecordActionTool`; `isPressClass` in `selectorCollector.ts`, read by its class candidates and
-  by `cssFallback` in `selectorGenerator.ts`). The recorder generates a click's selectors on `click`,
-  after the page has handled `mousedown`. Many sites change classes there: a focus-ring suppressor,
-  an `is-pressed` or `is-active` state. Upstream reads them, so a class combination made unique by
-  such a class becomes a locator that cannot match at replay, which resolves before the click. At
-  `pointerdown` (or `mousedown` without pointer events), the tool takes the class list of the press
-  target and of each composed ancestor. The click passes it to generation as `pressClasses`, and
-  both class readers skip, for those elements, every class missing from it. Elements outside the
-  chain are read as they are. The snapshot is taken per press and consumed by the next click.
-  Full design: zazu's `docs/specs/press-class-recording.md`. Guarded by the press-class tests in
-  `tests/library/inspector/recorder-api.spec.ts` (target, structural fallback, ancestor anchor,
-  classes kept at rest and when toggled during the press, snapshot per press).
+- **Recorded selectors leave out classes the hover or the press added**
+  (`packages/injected/src/recorder/recorder.ts`: `Recorder._onPointerOver`/`restClassesFor`,
+  `JsonRecordActionTool._press`; `hoverInference.ts`; `isGestureClass` in `selectorCollector.ts`,
+  read by its class candidates and by `cssFallback` in `selectorGenerator.ts`). The recorder
+  generates a click's selectors on `click`, and an inferred hover's once the hover has revealed
+  something. By then the page has often changed classes on the element: `is-highlighted` or
+  `is-hovered` on `mouseenter`, a focus-ring suppressor or `is-pressed` on `mousedown`. Upstream
+  reads them, so a class combination made unique by such a class becomes a locator that cannot
+  match at replay, which resolves before the action moves the pointer there.
+
+  `Recorder` listens to `pointerover` (capture, on the document: before the page's
+  `mouseover`/`mouseenter` handlers) and keeps, for each element on the pointer's composed chain,
+  the class list it had when the pointer entered it, dropping the elements the pointer left. At
+  `pointerdown` (or `mousedown` without pointer events) the press takes those snapshots, and the
+  current classes for the elements the pointer never entered. Inferred hovers take the snapshots
+  alone. Both pass them to generation as `restClasses`, and both class readers skip, for those
+  elements, every class missing from them. Elements outside the map are read as they are. After
+  each recorded action, once the page's handlers have run, the snapshots of the chain under the
+  pointer are refreshed: replay leaves the pointer there too, so that is the state the next
+  step resolves in. A node the page created under the pointer in reaction to the hover
+  (ngx-bootstrap's date picker rebuilds its rows, the hovered day already highlighted) inherits
+  the snapshot of the node it replaced: same depth on the snapshotted chain, now disconnected,
+  same tag. That lookup runs both on `pointerover` and when the press or a hover step reads the
+  snapshots, since browsers differ on whether a fresh `pointerover` reaches the new node. Full design: zazu's `docs/specs/press-class-recording.md`. Guarded by the
+  press and hover class tests in `tests/library/inspector/recorder-api.spec.ts` (press: target,
+  structural fallback, ancestor anchor, classes kept at rest and when toggled during the press,
+  snapshot per press; hover: target, ancestor anchor, re-rendered target, inferred hover step,
+  classes kept from before the pointer arrived, snapshot per entry).
 
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it

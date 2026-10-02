@@ -1192,3 +1192,116 @@ test('takes the snapshot per press: a class kept from an earlier press is part o
   expect(first.filter(s => s.includes('was-pressed'))).toEqual([]);
   expect(second.some(s => s.includes('was-pressed'))).toBe(true);
 });
+
+// Hover part of the same spec: classes the page adds when the pointer enters an element are
+// just as absent at replay, which resolves before the action moves the pointer there.
+async function recordEvents(context, html: string, act: (page: Page) => Promise<void>, actions: string[], only?: string): Promise<{ action: string, selectors: string[] }[]> {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+  const page = await recordedContext.newPage();
+  await page.setContent(html);
+  await act(page);
+  const kept = () => events.filter(e => !only || e.action === only);
+  await expect.poll(() => kept().map(e => e.action)).toEqual(actions);
+  await recordedContext.close();
+  return kept().map(e => ({ action: e.action, selectors: e.selectors.map((entry: any) => entry.selector) }));
+}
+
+test('leaves out a class the page adds to the clicked element on mouseenter', async ({ context }) => {
+  // The date-picker shape: day cells sharing their classes, the one under the pointer
+  // highlighted, so the highlight is what makes a class combination unique.
+  const [click] = await recordEvents(context, `
+    <span class="day" style="display:inline-block;width:40px;height:40px">1</span>
+    <span class="day" style="display:inline-block;width:40px;height:40px">1</span>
+    <script>
+      for (const d of document.querySelectorAll('.day')) {
+        d.addEventListener('mouseenter', () => d.classList.add('is-highlighted'));
+        d.addEventListener('mouseleave', () => d.classList.remove('is-highlighted'));
+      }
+    </script>`, page => page.locator('.day').first().click(), ['click']);
+  expect(click.selectors.length).toBeGreaterThan(0);
+  expect(click.selectors.filter(s => s.includes('is-highlighted'))).toEqual([]);
+});
+
+test('leaves out a class the page adds to an ancestor of the clicked element on mouseover', async ({ context }) => {
+  // The row becomes a unique anchor only through its hover class.
+  const [click] = await recordEvents(context, `
+    <div class="row"><button>Go</button></div>
+    <div class="row"><button>Stop</button></div>
+    <script>
+      for (const r of document.querySelectorAll('.row'))
+        r.addEventListener('mouseover', () => r.classList.add('row--hover'));
+    </script>`, page => page.getByRole('button', { name: 'Go' }).click(), ['click']);
+  expect(click.selectors.length).toBeGreaterThan(0);
+  expect(click.selectors.filter(s => s.includes('row--hover'))).toEqual([]);
+});
+
+test('leaves out a hover class when the page re-renders the hovered element', async ({ context }) => {
+  // The ngx-bootstrap date-picker shape: hovering a day rebuilds the rows, so the day under the
+  // pointer is a new node, created already highlighted. It inherits the snapshot of the node it
+  // replaced. Only the click matters: WebKit's timing also lets the hover-inference engine read
+  // the rebuilt rows as content the hover revealed, and record a hover on them.
+  const [click] = await recordEvents(context, `
+    <table><tbody id="days"></tbody></table>
+    <script>
+      let hovered = -1;
+      function render() {
+        const cell = i => '<td><span class="day' + (i === hovered ? ' is-highlighted' : '') + '" data-i="' + i + '" style="display:inline-block;width:40px;height:40px">1</span></td>';
+        document.getElementById('days').innerHTML = '<tr>' + cell(0) + cell(1) + '</tr>';
+        for (const d of document.querySelectorAll('.day'))
+          d.addEventListener('mouseenter', () => { const i = +d.dataset.i; if (i !== hovered) { hovered = i; render(); } });
+      }
+      render();
+    </script>`, page => page.locator('.day').first().click(), ['click'], 'click');
+  expect(click.selectors.length).toBeGreaterThan(0);
+  expect(click.selectors.filter(s => s.includes('is-highlighted'))).toEqual([]);
+});
+
+const MENUS = `
+  <style>.menu { display: none; } .menu.show { display: block; }</style>
+  <button class="nav-trigger nav-products">Products</button><ul class="menu"><li><a href="#">Pricing</a></li></ul>
+  <button class="nav-trigger">Company</button><ul class="menu"><li><a href="#">Team</a></li></ul>
+  <script>
+    for (const t of document.querySelectorAll('.nav-trigger'))
+      t.addEventListener('mouseenter', () => { t.classList.add('is-hovered'); t.nextElementSibling.classList.add('show'); });
+  </script>`;
+
+test('leaves out a hover class from an inferred hover step', async ({ context }) => {
+  // "Company" has no class of its own: only its hover class makes a class combination unique.
+  const [hover] = await recordEvents(context, MENUS, async page => {
+    await page.getByRole('button', { name: 'Company' }).hover();
+    await page.waitForTimeout(700);
+    await page.getByRole('link', { name: 'Team' }).click();
+  }, ['hover', 'click']);
+  expect(hover.selectors.length).toBeGreaterThan(0);
+  expect(hover.selectors.filter(s => s.includes('is-hovered'))).toEqual([]);
+});
+
+test('keeps the classes an element had before the pointer arrived', async ({ context }) => {
+  // `nav-products` is there at rest: the inferred hover may still use it.
+  const [hover] = await recordEvents(context, MENUS, async page => {
+    await page.getByRole('button', { name: 'Products' }).hover();
+    await page.waitForTimeout(700);
+    await page.getByRole('link', { name: 'Pricing' }).click();
+  }, ['hover', 'click']);
+  expect(hover.selectors.some(s => s.includes('nav-products'))).toBe(true);
+});
+
+test('takes the snapshot at rest per entry: a hover class kept after leaving is part of the element next time', async ({ context }) => {
+  // The page keeps `was-hovered` once added. The first click leaves it out; after the pointer
+  // left and came back, it is the element's state at rest, and the second click may use it.
+  const [first, second] = await recordEvents(context, `
+    <button class="btn">Save</button>
+    <button class="btn">Save</button>
+    <script>
+      const b = document.querySelector('.btn');
+      b.addEventListener('mouseenter', () => b.classList.add('was-hovered'));
+    </script>`, async page => {
+    await page.getByRole('button', { name: 'Save' }).first().click();
+    await page.mouse.move(0, 0);
+    await page.getByRole('button', { name: 'Save' }).first().click();
+  }, ['click', 'click']);
+  expect(first.selectors.filter(s => s.includes('was-hovered'))).toEqual([]);
+  expect(second.selectors.some(s => s.includes('was-hovered'))).toBe(true);
+});

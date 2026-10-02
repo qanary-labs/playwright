@@ -396,7 +396,9 @@ export class HoverInferenceEngine {
     const existing = this._candidates.find(candidate => candidate.element === element);
     if (existing)
       return existing;
-    const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName });
+    // A hover step is resolved before the pointer moves there, so classes the element gained
+    // when it was entered are left out (zazu's press-class-recording spec, hover part).
+    const generated = this._recorder.generateSelector(element, { testIdAttributeName: this._recorder.state.testIdAttributeName, restClasses: this._recorder.restClassesFor(element, false) });
     if (!generated.selector)
       return null;
     const candidate: Candidate = {
