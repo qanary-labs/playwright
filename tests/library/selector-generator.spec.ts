@@ -1038,6 +1038,71 @@ it.describe('selector generator', () => {
       await assertAllResolve(page, 'span:nth-child(2)', ranked.map(entry => entry.selector));
     });
 
+    // zazu's icon-only-control-recording spec. The Air Liquide order search: the magnifier
+    // has no name, no text, no id, and its own classes are shared, so before the icon
+    // candidate everything collected for it was positional.
+    const orderSearch = `
+      <style>.al-icon-search::before { content: "\\e9a1"; }</style>
+      <header><button type="button" class="aa-DetachedSearchButton" title="Search"><svg class="aa-SubmitIcon"></svg></button></header>
+      <form><div class="form-group al-search-custom">
+        <input type="text" data-testid="orders-reference-input" placeholder="Recherchez votre commande par référence">
+        <button type="button" class="btn-reset"><i class="al-icon-close"></i></button>
+        <button class="btn btn-primary has-icon"><i class="al-icon-search"></i></button>
+      </div>
+      <button type="button" disabled data-testid="orders-apply-filters-button">Appliquer les filtres</button></form>
+      <div class="modal" hidden><button type="button" class="btn btn-primary has-icon"><i class="al-icon-cart"></i></button></div>`;
+
+    it('names an icon-only control by its icon', async ({ page }) => {
+      await page.setContent(orderSearch);
+      const { ranked } = await collect(page, '.has-icon >> nth=0');
+      expect(ranked[0]).toEqual({ selector: 'internal:role=button >> internal:has=".al-icon-search"', score: 1620 });
+      await assertAllResolve(page, '.has-icon >> nth=0', ranked.map(entry => entry.selector));
+    });
+
+    it('adds no icon candidate where another locator decides', async ({ page }) => {
+      await page.setContent(orderSearch + `<button><i class="al-icon-cart"></i> Commander</button>`);
+      const reset = await collect(page, '.btn-reset');
+      expect(reset.ranked.map(entry => entry.selector)).toContain('.btn-reset');
+      const named = await collect(page, 'text=Commander');
+      for (const { ranked } of [reset, named])
+        expect(ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+    });
+
+    it('emits no icon candidate for an icon the page shows twice', async ({ page }) => {
+      await page.setContent(`<div><button><i class="icon-trash"></i></button></div><div><button><i class="icon-trash"></i></button></div>`);
+      const { ranked } = await collect(page, 'button >> nth=0');
+      expect(ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+    });
+
+    it('never names a control by a generated class', async ({ page }) => {
+      await page.setContent(`<button><i class="sc-imWYAI"></i></button><button>Other</button>`);
+      const { ranked } = await collect(page, 'button >> nth=0');
+      expect(ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+    });
+
+    it('reads icons down to three levels, shallowest first', async ({ page }) => {
+      await page.setContent(`
+        <button><span class="wrap"><span><i class="icon-search"></i></span></span></button>
+        <button><span><span><span><i class="icon-deep"></i></span></span></span></button>`);
+      const shallow = await collect(page, 'button >> nth=0');
+      expect(shallow.ranked.filter(entry => entry.selector.includes('internal:has=')).map(entry => entry.selector)).toEqual([
+        'internal:role=button >> internal:has=".wrap"',
+        'internal:role=button >> internal:has=".icon-search"',
+      ]);
+      const deep = await collect(page, 'button >> nth=1');
+      expect(deep.ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+    });
+
+    it('names an icon-only control of any role, or by its tag without one', async ({ page }) => {
+      await page.setContent(`
+        <a href="#"><i class="icon-home"></i></a><a href="#"><i class="icon-user"></i></a>
+        <span onclick="void 0"><i class="icon-close"></i></span><span onclick="void 0"><i class="icon-open"></i></span>`);
+      const link = await collect(page, 'a >> nth=0');
+      expect(link.ranked[0]).toEqual({ selector: 'internal:role=link >> internal:has=".icon-home"', score: 1620 });
+      const roleless = await collect(page, 'span >> nth=0');
+      expect(roleless.ranked[0]).toEqual({ selector: 'span >> internal:has=".icon-close"', score: 1660 });
+    });
+
     it('is deterministic on an unchanged DOM', async ({ page }) => {
       await page.setContent(cards(30));
       const first = await collect(page, '[data-idx="28"] .card__link');

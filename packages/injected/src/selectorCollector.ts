@@ -30,6 +30,8 @@
 
 import { quoteCSSAttributeValue } from '@isomorphic/stringUtils';
 
+import { getAriaRole, getElementAccessibleName } from './roleUtils';
+
 import type { InjectedScript } from './injectedScript';
 
 // Structurally identical to selectorGenerator's SelectorToken. Declared here rather
@@ -43,6 +45,11 @@ export const kCSSAttributeScore = 520;
 export const kCSSClassScore = 600;
 
 const kCSSFallbackScore = 10000000;
+// The generator's scores for a role without a name and a tag name, which an icon candidate
+// is built on, and the start of zazu's floor band (the generator's kNthScore).
+const kRoleWithoutNameScore = 510;
+const kTagNameScore = 530;
+const kFloorScore = 10000;
 // Structural paths all score kCSSFallbackScore, which leaves a three-level path
 // indistinguishable from an eight-level one. Emitted scores carry a depth term so
 // shallow paths outrank deep ones; it is far below the gap to the next band, so it
@@ -58,6 +65,10 @@ export const kMaxAnchorAncestors = 6;
 export const kMaxAnchorsPerCandidate = 2;
 const kAttributeValueMaxLength = 80;
 const kMaxClassTokens = 4;
+// How deep inside a nameless control its icon is looked for (zazu's icon-only-control-recording
+// spec): an icon font wrapped twice, `<button><span><i>`. The recorder snapshots the same depth.
+export const kIconDepth = 3;
+const kMaxIconCandidates = 2;
 
 // Classes an element had at rest (zazu's press-class-recording spec). The recorder
 // snapshots the class list of each element on the pointer's chain when the pointer enters
@@ -89,6 +100,8 @@ type Entry = {
   // evidence twice (same anchor element + same target candidate).
   anchorKey?: number;
   targetKey?: string;
+  // An icon candidate, which only speaks for a control nothing else decides (see build).
+  icon?: boolean;
 };
 
 export type CollectedSelector = { selector: string, score: number };
@@ -173,11 +186,45 @@ export class SelectorCollector {
       this.add([token]);
   }
 
+  // A nameless control named by the class of its icon: `internal:role=button >>
+  // internal:has=".al-icon-search"`. Its name, its text and its own classes say nothing, so
+  // without this everything collected for it is positional, and a button added earlier in
+  // the page moves the step onto another one. Only unique candidates are kept.
+  addIconCandidates(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined) {
+    const accessibleName = getElementAccessibleName(element, false);
+    // As the generator decides it: a name of icon-font glyphs alone is no name.
+    if (accessibleName && !accessibleName.match(/^\p{Co}+$/u))
+      return;
+    const role = getAriaRole(element);
+    const control: CollectorToken = role && !['none', 'presentation'].includes(role)
+      ? { engine: 'internal:role', selector: role, score: kRoleWithoutNameScore }
+      : { engine: 'css', selector: escapeNodeName(element), score: kTagNameScore };
+    const scope: Node = root ?? element.ownerDocument;
+    let found = 0;
+    for (const descendant of descendantsByDepth(element, kIconDepth)) {
+      const classes = [...descendant.classList].filter(name => !isGestureClass(this._restClasses, descendant, name)).slice(0, kMaxClassTokens)
+          .map(escapeClassName).filter(name => name && !isGeneratedClassName(name));
+      for (const className of classes) {
+        const tokens = [control, { engine: 'internal:has', selector: JSON.stringify('.' + className), score: kCSSClassScore }];
+        const matches = injectedScript.querySelectorAll(injectedScript.parseSelector(this._join(tokens)), scope);
+        if (matches.length !== 1 || matches[0] !== element)
+          continue;
+        this._store(tokens, undefined, undefined, true);
+        if (++found >= kMaxIconCandidates)
+          return;
+      }
+    }
+  }
+
   // `required` are the legacy `selectors`, which must survive the caps: the emitted set
   // is a superset of the old one, so a consumer can switch to it wholesale.
   build(verify: (selector: string) => boolean, required: string[]): CollectedSelector[] {
     const requiredSet = new Set(required);
-    const byScore = [...this._entries.values()].sort(compareEntries);
+    let byScore = [...this._entries.values()].sort(compareEntries);
+    // The icon is the evidence of last resort: a control any other locator decides (a test
+    // id, an id, an attribute, its own class, a name) is not named by its icon.
+    if (byScore.some(entry => !entry.icon && entry.score < kFloorScore && verify(entry.selector)))
+      byScore = byScore.filter(entry => !entry.icon);
     const picked: Entry[] = [];
     const seen = new Set<string>();
     const seenEvidence = new Set<string>();
@@ -244,13 +291,13 @@ export class SelectorCollector {
         .map(entry => ({ selector: entry.selector, score: entry.score }));
   }
 
-  private _store(tokens: CollectorToken[], anchorKey: number | undefined, targetKey: string | undefined) {
+  private _store(tokens: CollectorToken[], anchorKey: number | undefined, targetKey: string | undefined, icon?: boolean) {
     const selector = this._join(tokens);
     const score = emittedScore(tokens, this._combine(tokens));
     const existing = this._entries.get(selector);
     if (existing && existing.score <= score)
       return;
-    const entry: Entry = { selector, score, family: classify(tokens), order: this._order++, anchorKey, targetKey };
+    const entry: Entry = { selector, score, family: classify(tokens), order: this._order++, anchorKey, targetKey, icon };
     this._entries.set(selector, entry);
     if (targetKey !== undefined)
       this._chains.push(entry);
@@ -420,6 +467,18 @@ function uniqueClassToken(injectedScript: InjectedScript, element: Element, root
       return { engine: 'css', selector, score: kCSSClassScore };
   }
   return null;
+}
+
+// Element descendants down to `depth` levels: the shallowest level first, document order
+// within a level.
+function descendantsByDepth(element: Element, depth: number): Element[] {
+  const descendants: Element[] = [];
+  let level = [...element.children];
+  for (let i = 0; i < depth && level.length; ++i) {
+    descendants.push(...level);
+    level = level.flatMap(child => [...child.children]);
+  }
+  return descendants;
 }
 
 // Local copies of two selectorGenerator helpers: importing them would create a cycle

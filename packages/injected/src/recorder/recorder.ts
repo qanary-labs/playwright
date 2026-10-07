@@ -776,6 +776,25 @@ function composedChain(element: Element | null): Element[] {
   return chain;
 }
 
+// Generation names a nameless control by the class of its icon, read this deep
+// (selectorCollector.ts, kIconDepth), so the icon needs its classes at rest even when the
+// pointer is on the control around it and never entered it (zazu's
+// icon-only-control-recording spec). The control is what generation retargets a click to
+// (selectorGenerator.ts), else the element under the pointer.
+const kIconDepth = 3;
+const kRetargetedControls = 'button,select,input,[role=button],[role=checkbox],[role=radio],a,[role=link]';
+
+function iconSubtree(chain: Element[]): Element[] {
+  const control = chain.find(element => element.matches(kRetargetedControls)) ?? chain[0];
+  const subtree: Element[] = [];
+  let level = control ? [...control.children] : [];
+  for (let i = 0; i < kIconDepth && level.length; ++i) {
+    subtree.push(...level);
+    level = level.flatMap(child => [...child.children]);
+  }
+  return subtree;
+}
+
 class JsonRecordActionTool implements RecorderTool {
   private _recorder: Recorder;
   // Element under the pointer when the primary button went down. Captured before
@@ -1959,6 +1978,10 @@ export class Recorder {
     const chain = composedChain(this.deepEventTarget(event));
     const restClasses: RestClasses = new Map();
     chain.forEach((element, index) => restClasses.set(element, this._atRest(chain, index) ?? new Set(element.classList)));
+    for (const element of iconSubtree(chain)) {
+      if (!restClasses.has(element))
+        restClasses.set(element, this._restClasses.get(element) ?? new Set(element.classList));
+    }
     this._restClasses = restClasses;
   }
 
@@ -1982,9 +2005,10 @@ export class Recorder {
       this._restClasses.set(element, new Set(element.classList));
   }
 
-  // The classes at rest of `target` and its composed ancestors, for generation to keep. An
-  // element the pointer never entered gets its current classes when `fallbackToCurrent`
-  // (the press: nothing happened to it yet), and no entry otherwise (read as it is).
+  // The classes at rest of `target`, its composed ancestors and its control's icon subtree,
+  // for generation to keep. An element without a snapshot gets its current classes when
+  // `fallbackToCurrent` (the press: nothing happened to it yet), and no entry otherwise
+  // (read as it is).
   restClassesFor(target: Element, fallbackToCurrent: boolean): RestClasses {
     const restClasses: RestClasses = new Map();
     const chain = composedChain(target);
@@ -1993,6 +2017,11 @@ export class Recorder {
       if (atRest)
         restClasses.set(element, atRest);
     });
+    for (const element of iconSubtree(chain)) {
+      const atRest = this._restClasses.get(element) ?? (fallbackToCurrent ? new Set(element.classList) : undefined);
+      if (atRest && !restClasses.has(element))
+        restClasses.set(element, atRest);
+    }
     return restClasses;
   }
 

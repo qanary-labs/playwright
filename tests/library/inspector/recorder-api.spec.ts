@@ -1305,3 +1305,34 @@ test('takes the snapshot at rest per entry: a hover class kept after leaving is 
   expect(first.selectors.filter(s => s.includes('was-hovered'))).toEqual([]);
   expect(second.selectors.some(s => s.includes('was-hovered'))).toBe(true);
 });
+
+// zazu's icon-only-control-recording spec: a nameless control is recorded by the class of
+// its icon, whether the pointer lands on the icon or on the control around it.
+const ICON_BUTTONS = `
+  <style>button { padding: 20px; } i { display: inline-block; width: 16px; height: 16px; }</style>
+  <button class="btn"><i class="icon-search"></i></button>
+  <button class="btn"><i class="icon-close"></i></button>`;
+
+test('records an icon-only control by its icon, clicked on the icon', async ({ context }) => {
+  const [selectors] = await recordClickSelectors(context, ICON_BUTTONS, page => page.locator('.icon-search').click());
+  expect(selectors).toContain('internal:role=button >> internal:has=".icon-search"');
+});
+
+test('records an icon-only control by its icon, clicked beside the icon', async ({ context }) => {
+  const [selectors] = await recordClickSelectors(context, ICON_BUTTONS, page => page.locator('.btn').first().click({ position: { x: 3, y: 3 } }));
+  expect(selectors).toContain('internal:role=button >> internal:has=".icon-search"');
+});
+
+test('leaves out a class the page adds to the icon when the pointer enters its control', async ({ context }) => {
+  // Both icons share their class at rest: only the hover class would make one unique.
+  const [selectors] = await recordClickSelectors(context, `
+    <style>button { padding: 20px; } i { display: inline-block; width: 16px; height: 16px; }</style>
+    <button><i class="icon-x"></i></button>
+    <button><i class="icon-x"></i></button>
+    <script>
+      for (const b of document.querySelectorAll('button'))
+        b.addEventListener('mouseenter', () => b.firstElementChild.classList.add('is-active'));
+    </script>`, page => page.locator('button').first().click({ position: { x: 3, y: 3 } }));
+  expect(selectors.length).toBeGreaterThan(0);
+  expect(selectors.filter(s => s.includes('is-active'))).toEqual([]);
+});

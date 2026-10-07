@@ -176,9 +176,11 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
       selectors = [selector, ...[...allSelectors].filter(s => s !== selector)];
       if (collector) {
         // Qanary fork: candidates the enumeration has no notion of - a structural path,
-        // stable attributes, a unique class. Collect-only: they are added after every
-        // selection decision has been made, so they cannot move the primary.
+        // stable attributes, a unique class, the icon of a nameless control. Collect-only:
+        // they are added after every selection decision has been made, so they cannot move
+        // the primary.
         collector.addCollectOnlyCandidates(injectedScript, targetElement, options.root);
+        collector.addIconCandidates(injectedScript, targetElement, options.root);
         collector.add(cssFallback(injectedScript, targetElement, options));
         collector.add(cssFallback(injectedScript, targetElement, { ...options, noCSSId: true }));
         rankedSelectors = collector.build(sel => {

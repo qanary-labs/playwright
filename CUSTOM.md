@@ -176,7 +176,10 @@
   (ngx-bootstrap's date picker rebuilds its rows, the hovered day already highlighted) inherits
   the snapshot of the node it replaced: same depth on the snapshotted chain, now disconnected,
   same tag. That lookup runs both on `pointerover` and when the press or a hover step reads the
-  snapshots, since browsers differ on whether a fresh `pointerover` reaches the new node. Full design: zazu's `docs/specs/press-class-recording.md`. Guarded by the
+  snapshots, since browsers differ on whether a fresh `pointerover` reaches the new node. Since
+  2026-10-06 the snapshots also cover the descendants, three levels deep, of the control under the
+  pointer (`iconSubtree`): the icon a nameless control is named by must be read at rest even when
+  the pointer is on the control's padding and never entered it. Full design: zazu's `docs/specs/press-class-recording.md`. Guarded by the
   press and hover class tests in `tests/library/inspector/recorder-api.spec.ts` (press: target,
   structural fallback, ancestor anchor, classes kept at rest and when toggled during the press,
   snapshot per press; hover: target, ancestor anchor, re-rendered target, inferred hover step,
@@ -280,6 +283,26 @@
   protocol `browserContext.yml`/`frame.yml`, and the two API docs. Guarded by the `collected selectors` block in
   `tests/library/selector-generator.spec.ts` plus three payload/API tests in
   `tests/library/inspector/recorder-api.spec.ts`.
+
+- **A nameless control is named by its icon** (`addIconCandidates` and the `build` gate in
+  `selectorCollector.ts`, one hook in `selectorGenerator.ts`; since 2026-10-06). A control with no
+  accessible name (or a name of icon-font glyphs only), no text, and own classes shared with other
+  elements, such as a magnifier button `<button class="btn btn-primary"><i class="al-icon-search"></i></button>`,
+  got only positional locators (`internal:role=button >> nth=5`, `button:nth-child(3)`). A step
+  carrying nothing else decides on its first one, so a button added earlier in the page moved it
+  onto another button: found on Air Liquide's order search, which clicked the disabled "Appliquer
+  les filtres" instead. Collection now reads the classes of the control's descendants, three
+  levels deep, shallowest first, through the same filters as its other class readers (generated
+  names, gesture classes), and keeps up to two unique `internal:role=<role> >> internal:has=".<class>"`
+  candidates (the tag name when the control has no role). Score: role 510 + class 600, so 1620,
+  inside zazu's deciding band and far from its gate. They are emitted only when no other
+  candidate under the floor (10⁴) resolves to the target: a control anything else decides is not
+  named by its icon. A shared icon (`.al-icon-close` on three buttons) yields nothing. Collect-only
+  like every collected candidate: the primary selector is unchanged. Full design: zazu's
+  `docs/specs/icon-only-control-recording.md`. Guarded by the six icon tests in the `collected
+  selectors` block of `tests/library/selector-generator.spec.ts` and the three icon tests in
+  `tests/library/inspector/recorder-api.spec.ts` (click on the icon, beside it, hover class on the
+  icon).
 
 - **Covered-target substitution inside `click`** — one of the fork's changes to what `click` may
   click (see also the two label entries after this one). Some interactive tiles stack sibling anchors
