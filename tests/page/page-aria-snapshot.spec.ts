@@ -419,6 +419,24 @@ it('should treat input value as text in templates, but not for checkbox/radio/fi
   `);
 });
 
+it('should mask the value of a field the page shows masked', async ({ page }) => {
+  await page.setContent(`
+    <input aria-label='Password' type=password value='S3cr3t!'>
+    <input aria-label='Long password' type=password value='a much longer secret'>
+    <input aria-label='Empty password' type=password>
+    <input aria-label='CVV' value='123' style='-webkit-text-security: disc'>
+    <input aria-label='Card' value='4242 4242 4242 4242'>
+  `);
+
+  await checkAndMatchSnapshot(page.locator('body'), `
+    - textbox "Password": ••••
+    - textbox "Long password": ••••
+    - textbox "Empty password"
+    - textbox "CVV": ••••
+    - textbox "Card": 4242 4242 4242 4242
+  `);
+});
+
 it('should not use on as checkbox value', async ({ page }) => {
   await page.setContent(`
     <input type='checkbox'>

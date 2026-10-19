@@ -421,6 +421,18 @@
   label inside a link; restraint: a label getting its box while waiting is clicked normally; and
   one page carrying both this fallback and a covered target, each clicked through its own path).
 
+- **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
+  `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,
+  passwords included: `textbox "Password": S3cr3t!`. zazu sends the snapshot to the model beside
+  the screenshots and keeps it in its debug artifacts, which feed a benchmark, while the
+  screenshots show the same field as dots. Rule: the snapshot never shows more than the page does.
+  A `type=password` input, or a field masked by CSS `-webkit-text-security` (a CVV or a PIN), is
+  written `••••` when filled, always four dots so the length does not leak, and with no value when
+  empty. The value is masked, not dropped, so a filled field still reads as filled. A card number
+  in a plain field is not masked: the page shows it. Full design: zazu's
+  `docs/specs/visual-assertion-v2.md` (*Page text*). Guarded by the masked-field test in
+  `tests/page/page-aria-snapshot.spec.ts`.
+
 ## Installation
 
 Follow [CONTRIBUTING.md](./CONTRIBUTING.md) guidelines.

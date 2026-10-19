@@ -281,10 +281,22 @@ function toAriaNode(element: Element, options: InternalOptions): aria.AriaNode |
 
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
     if (element.type !== 'checkbox' && element.type !== 'radio' && element.type !== 'file')
-      result.children = [element.value];
+      result.children = [isMaskedField(element) && element.value ? kMaskedValue : element.value];
   }
 
   return result;
+}
+
+// The snapshot never shows more than the page does: a field the page draws masked (a
+// password, or text masked by CSS such as a CVV) keeps a fixed mask, so neither the value
+// nor its length leaks, and a filled field still reads as filled.
+const kMaskedValue = '••••';
+
+function isMaskedField(element: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (element.type === 'password')
+    return true;
+  const security = getElementComputedStyle(element)?.getPropertyValue('-webkit-text-security');
+  return !!security && security !== 'none';
 }
 
 function normalizeGenericRoles(node: aria.AriaNode) {
