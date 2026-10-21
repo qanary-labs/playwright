@@ -1103,6 +1103,45 @@ it.describe('selector generator', () => {
       expect(roleless.ranked[0]).toEqual({ selector: 'span >> internal:has=".icon-close"', score: 1660 });
     });
 
+    // Every icon query is an `internal:has` one, and nothing else in collection issues them.
+    async function countIconQueries(page: Page) {
+      await page.waitForFunction(() => !!(window as any).__injectedScript?.generateSelector);
+      await page.evaluate(() => {
+        const injected = (window as any).__injectedScript;
+        const querySelectorAll = injected.querySelectorAll.bind(injected);
+        (window as any).__iconQueries = 0;
+        injected.querySelectorAll = (selector: any, root: Node) => {
+          if (selector.parts.some((part: any) => part.name === 'internal:has'))
+            (window as any).__iconQueries++;
+          return querySelectorAll(selector, root);
+        };
+      });
+      return () => page.evaluate(() => (window as any).__iconQueries);
+    }
+
+    const rows = (count: number, suffix: string) => [...Array(count).keys()].map(i =>
+      `<div class="line line-${i}${suffix}"><div class="cell cell-${i}${suffix}"><span class="price price-${i}${suffix}"></span></div></div>`).join('');
+
+    it('runs no icon query where another locator decides', async ({ page }) => {
+      // The ALFR products tab: a nameless container hovered at replay, decided by its own class.
+      await page.setContent(`<div class="tab-content">${rows(20, '')}</div>`);
+      const iconQueries = await countIconQueries(page);
+      const { ranked } = await collect(page, '.tab-content');
+      expect(ranked.map(entry => entry.selector)).toContain('.tab-content');
+      expect(ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+      expect(await iconQueries()).toBe(0);
+    });
+
+    it('stops the icon search after eight queries', async ({ page }) => {
+      // Repeated, so nothing decides the container and the search runs; every class is shared,
+      // so no query finds the icon.
+      await page.setContent(`<section><div class="panel">${rows(20, '')}</div></section><section><div class="panel">${rows(20, '')}</div></section>`);
+      const iconQueries = await countIconQueries(page);
+      const { ranked } = await collect(page, '.panel >> nth=0');
+      expect(ranked.filter(entry => entry.selector.includes('internal:has='))).toEqual([]);
+      expect(await iconQueries()).toBe(8);
+    });
+
     it('is deterministic on an unchanged DOM', async ({ page }) => {
       await page.setContent(cards(30));
       const first = await collect(page, '[data-idx="28"] .card__link');
