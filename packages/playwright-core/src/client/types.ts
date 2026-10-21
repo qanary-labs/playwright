@@ -69,7 +69,7 @@ export type BrowserContextOptions = Omit<channels.BrowserNewContextOptions, 'vie
   storageState?: string | SetStorageState;
   // Qanary fork: `true` records selectors with the default budget; `{ max }` sets how many
   // scored selectors each action carries (see zazu's weighted-locator-generation spec).
-  recordSelectors?: boolean | { max?: number };
+  recordSelectors?: boolean | { max?: number, capture?: boolean };
   har?: {
     path: string;
     fallback?: 'abort'|'continue';

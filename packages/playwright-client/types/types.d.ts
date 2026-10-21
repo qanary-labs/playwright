@@ -10599,6 +10599,14 @@ export interface Browser {
        * may carry per action. Defaults to `10`.
        */
       max?: number;
+
+      /**
+       * Whether user interactions are captured and emitted. Defaults to `true`. With `false`, the recorder is installed but
+       * idle: no `recorderaction` event, while the page keeps the resolve pass and
+       * [locator.generateSelectors([options])](https://playwright.dev/docs/api/class-locator#locator-generate-selectors)
+       * works as usual.
+       */
+      capture?: boolean;
     };
 
     /**
@@ -16071,6 +16079,14 @@ export interface BrowserType<Unused = {}> {
        * may carry per action. Defaults to `10`.
        */
       max?: number;
+
+      /**
+       * Whether user interactions are captured and emitted. Defaults to `true`. With `false`, the recorder is installed but
+       * idle: no `recorderaction` event, while the page keeps the resolve pass and
+       * [locator.generateSelectors([options])](https://playwright.dev/docs/api/class-locator#locator-generate-selectors)
+       * works as usual.
+       */
+      capture?: boolean;
     };
 
     /**
@@ -23214,6 +23230,14 @@ export interface AndroidDevice {
        * may carry per action. Defaults to `10`.
        */
       max?: number;
+
+      /**
+       * Whether user interactions are captured and emitted. Defaults to `true`. With `false`, the recorder is installed but
+       * idle: no `recorderaction` event, while the page keeps the resolve pass and
+       * [locator.generateSelectors([options])](https://playwright.dev/docs/api/class-locator#locator-generate-selectors)
+       * works as usual.
+       */
+      capture?: boolean;
     };
 
     /**
@@ -24406,6 +24430,14 @@ export interface BrowserContextOptions {
      * may carry per action. Defaults to `10`.
      */
     max?: number;
+
+    /**
+     * Whether user interactions are captured and emitted. Defaults to `true`. With `false`, the recorder is installed but
+     * idle: no `recorderaction` event, while the page keeps the resolve pass and
+     * [locator.generateSelectors([options])](https://playwright.dev/docs/api/class-locator#locator-generate-selectors)
+     * works as usual.
+     */
+    capture?: boolean;
   };
 
   /**

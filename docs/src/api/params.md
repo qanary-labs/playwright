@@ -818,6 +818,7 @@ When set to `minimal`, only record information necessary for routing from HAR. T
 * langs: js
 - `recordSelectors` <[boolean]|[Object]>
   - `max` ?<[int]> How many selectors [`property: RecorderActionPayload.selectors`] may carry per action. Defaults to `10`.
+  - `capture` ?<[boolean]> Whether user interactions are captured and emitted. Defaults to `true`. With `false`, the recorder is installed but idle: no `recorderaction` event, while the page keeps the resolve pass and [`method: Locator.generateSelectors`] works as usual.
 
 Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive, submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the selectors in your own tooling.
 

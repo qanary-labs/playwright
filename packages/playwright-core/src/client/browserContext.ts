@@ -188,8 +188,15 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     if (!recordSelectors || this._selectorRecorderEnabled)
       return;
     this._selectorRecorderEnabled = true;
+    // Without capture the recorder stays installed for the resolve pass it carries
+    // (`__pw_resolveAll`), and records nothing: a replay reads none of it (zazu's
+    // replay-without-capture spec).
+    const capture = typeof recordSelectors === 'object' ? recordSelectors.capture ?? true : true;
     await this._enableRecorder({
-      mode: 'recording',
+      // No mode is the recorder's `none`: installed, with an idle tool. Outside recording the
+      // server also highlights the target of every call in the page, unless told not to.
+      mode: capture ? 'recording' : undefined,
+      omitCallTracking: !capture,
       recorderMode: 'api',
       collectSelectors: true,
       maxSelectors: typeof recordSelectors === 'object' ? recordSelectors.max : undefined,

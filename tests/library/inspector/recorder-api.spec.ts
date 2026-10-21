@@ -462,6 +462,66 @@ test('should emit recorder action events for recordSelectors option', async ({ c
   await recordedContext.close();
 });
 
+// zazu's replay-without-capture spec: a replay keeps the recorder for its resolve pass and
+// on-demand generation, and captures nothing.
+const captureFlow = async (page: Page) => {
+  await page.setContent(`
+    <button id="products" onmouseenter="document.getElementById('menu').hidden = false">Products</button>
+    <ul id="menu" hidden><li><a href="#" id="pricing" onclick="event.preventDefault()">Pricing</a></li></ul>
+    <input type="text" />`);
+  await page.getByRole('button', { name: 'Products' }).hover();
+  await page.waitForTimeout(500);
+  await page.getByRole('link', { name: 'Pricing' }).click();
+  await page.getByRole('textbox').fill('Hello');
+  await page.getByRole('textbox').press('Enter');
+};
+
+test('captures nothing with capture off', async ({ context }) => {
+  const captured: string[] = [];
+  const capturing = await context.browser().newContext({ recordSelectors: true });
+  capturing.on('recorderaction' as any, (payload: { action: string }) => captured.push(payload.action));
+  await captureFlow(await capturing.newPage());
+  // The same flow is captured when capture is on: hover, click, fill and press arrive.
+  await expect.poll(() => captured).toEqual(['hover', 'click', 'fill', 'press']);
+  await capturing.close();
+
+  const idle: string[] = [];
+  const replaying = await context.browser().newContext({ recordSelectors: { capture: false } });
+  replaying.on('recorderaction' as any, (payload: { action: string }) => idle.push(payload.action));
+  const page = await replaying.newPage();
+  await captureFlow(page);
+  await page.waitForTimeout(500);
+  expect(idle).toEqual([]);
+  // No hover inference either: the idle tool has no engine to report on.
+  expect(await page.evaluate(() => (window as any).__pw_recorderHoverDebug())).toBeUndefined();
+  await replaying.close();
+});
+
+test('keeps the resolve pass with capture off, in every frame', async ({ context }) => {
+  const replaying = await context.browser().newContext({ recordSelectors: { capture: false } });
+  const page = await replaying.newPage();
+  await page.setContent(`<button id="go">Go</button><iframe srcdoc="<button id='inner'>Inner</button>"></iframe>`);
+  const frame = page.frames()[1];
+  await expect.poll(() => frame.evaluate(() => typeof (window as any).__pw_resolveAll === 'function')).toBe(true);
+  expect(await resolveAll(page, ['#go', 'internal:role=button[name="Go"i]'], 0, 't1')).toEqual({ matches: [{ id: 0, count: 1 }, { id: 0, count: 1 }], ancestors: [[]] });
+  expect((await resolveAll(frame, ['#inner'], 0, 't2')).matches).toEqual([{ id: 0, count: 1 }]);
+  await replaying.close();
+});
+
+test('generates the same selectors on demand with capture off', async ({ context }) => {
+  const dom = `<form><label>Email <input name="email" class="field"></label><button class="btn primary">Send</button></form>`;
+  const generated = [];
+  for (const recordSelectors of [true, { capture: false }]) {
+    const recordedContext = await context.browser().newContext({ recordSelectors });
+    const page = await recordedContext.newPage();
+    await page.setContent(dom);
+    generated.push(await page.getByRole('button', { name: 'Send' }).generateSelectors());
+    await recordedContext.close();
+  }
+  expect(generated[0].selectors.length).toBeGreaterThan(1);
+  expect(generated[1]).toEqual(generated[0]);
+});
+
 test('should emit recorder action for each fill', async ({ context }) => {
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
   const events: { action: string, value?: string }[] = [];

@@ -185,6 +185,18 @@
   snapshot per press; hover: target, ancestor anchor, re-rendered target, inferred hover step,
   classes kept from before the pointer arrived, snapshot per entry).
 
+- **`recordSelectors: { capture: false }`** (`_initializeSelectorRecorder` in
+  `client/browserContext.ts`; since 2026-10-21). Installs the recorder without capturing: it starts
+  in mode `none` (no `mode` sent, so the page gets the idle tool and hover inference never
+  installs) with `omitCallTracking`. Outside recording, the server would otherwise highlight the
+  target of every call in the page, and that highlight's tooltip changes what text candidates
+  match. `PollingRecorder` is injected whatever the mode, so `__pw_resolveAll` stays, and
+  `locator.generateSelectors()` returns the same lists as with capture on. `capture` defaults to
+  `true`. Consumer: zazu's run and relocate modes, which read nothing the capture tool produces.
+  A replayed hover once blocked a page for 58 minutes in hover inference's ahead-of-time
+  generation. Full design: zazu's `docs/specs/replay-without-capture.md`. Guarded by the three
+  "capture off" tests in `tests/library/inspector/recorder-api.spec.ts`.
+
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its
