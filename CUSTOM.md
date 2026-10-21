@@ -185,6 +185,18 @@
   snapshot per press; hover: target, ancestor anchor, re-rendered target, inferred hover step,
   classes kept from before the pointer arrived, snapshot per entry).
 
+- **`recordSelectors: { capture: false }`** (`_initializeSelectorRecorder` in
+  `client/browserContext.ts`; since 2026-10-21). Installs the recorder without capturing: it starts
+  in mode `none` (no `mode` sent, so the page gets the idle tool and hover inference never
+  installs) with `omitCallTracking`. Outside recording, the server would otherwise highlight the
+  target of every call in the page, and that highlight's tooltip changes what text candidates
+  match. `PollingRecorder` is injected whatever the mode, so `__pw_resolveAll` stays, and
+  `locator.generateSelectors()` returns the same lists as with capture on. `capture` defaults to
+  `true`. Consumer: zazu's run and relocate modes, which read nothing the capture tool produces.
+  A replayed hover once blocked a page for 58 minutes in hover inference's ahead-of-time
+  generation. Full design: zazu's `docs/specs/replay-without-capture.md`. Guarded by the three
+  "capture off" tests in `tests/library/inspector/recorder-api.spec.ts`.
+
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its
@@ -284,8 +296,8 @@
   `tests/library/selector-generator.spec.ts` plus three payload/API tests in
   `tests/library/inspector/recorder-api.spec.ts`.
 
-- **A nameless control is named by its icon** (`addIconCandidates` and the `build` gate in
-  `selectorCollector.ts`, one hook in `selectorGenerator.ts`; since 2026-10-06). A control with no
+- **A nameless control is named by its icon** (`addIconCandidates` in `selectorCollector.ts`, one
+  hook in `selectorGenerator.ts`; since 2026-10-06). A control with no
   accessible name (or a name of icon-font glyphs only), no text, and own classes shared with other
   elements, such as a magnifier button `<button class="btn btn-primary"><i class="al-icon-search"></i></button>`,
   got only positional locators (`internal:role=button >> nth=5`, `button:nth-child(3)`). A step
@@ -295,12 +307,17 @@
   levels deep, shallowest first, through the same filters as its other class readers (generated
   names, gesture classes), and keeps up to two unique `internal:role=<role> >> internal:has=".<class>"`
   candidates (the tag name when the control has no role). Score: role 510 + class 600, so 1620,
-  inside zazu's deciding band and far from its gate. They are emitted only when no other
+  inside zazu's deciding band and far from its gate. The search runs only when no other
   candidate under the floor (10⁴) resolves to the target: a control anything else decides is not
-  named by its icon. A shared icon (`.al-icon-close` on three buttons) yields nothing. Collect-only
+  named by its icon. It runs at most 8 queries, because each one checks the subtree of every
+  element of the control's role or tag on the page's main thread. Since 2026-10-21, both checks
+  happen before the first query. Before that, the gate was applied in `build`, after every query
+  had run, and a replayed hover on a nameless table container blocked a production page for 58
+  minutes. A shared icon (`.al-icon-close` on three buttons) yields nothing. Collect-only
   like every collected candidate: the primary selector is unchanged. Full design: zazu's
   `docs/specs/icon-only-control-recording.md`. Guarded by the six icon tests in the `collected
-  selectors` block of `tests/library/selector-generator.spec.ts` and the three icon tests in
+  selectors` block of `tests/library/selector-generator.spec.ts` (plus two that count the
+  queries: none when another locator decides, eight at most otherwise) and the three icon tests in
   `tests/library/inspector/recorder-api.spec.ts` (click on the icon, beside it, hover class on the
   icon).
 

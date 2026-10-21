@@ -179,19 +179,20 @@ export function generateSelector(injectedScript: InjectedScript, targetElement: 
         // stable attributes, a unique class, the icon of a nameless control. Collect-only:
         // they are added after every selection decision has been made, so they cannot move
         // the primary.
-        collector.addCollectOnlyCandidates(injectedScript, targetElement, options.root);
-        collector.addIconCandidates(injectedScript, targetElement, options.root);
-        collector.add(cssFallback(injectedScript, targetElement, options));
-        collector.add(cssFallback(injectedScript, targetElement, { ...options, noCSSId: true }));
-        rankedSelectors = collector.build(sel => {
-          // A collected candidate that will not parse is dropped, never fatal: it is
-          // extra information, and the primary must not depend on it.
+        // A collected candidate that will not parse is dropped, never fatal: it is
+        // extra information, and the primary must not depend on it.
+        const verify = (sel: string) => {
           try {
             return resolvesToTarget(sel);
           } catch {
             return false;
           }
-        }, selectors);
+        };
+        collector.addCollectOnlyCandidates(injectedScript, targetElement, options.root);
+        collector.addIconCandidates(injectedScript, targetElement, options.root, verify);
+        collector.add(cssFallback(injectedScript, targetElement, options));
+        collector.add(cssFallback(injectedScript, targetElement, { ...options, noCSSId: true }));
+        rankedSelectors = collector.build(verify, selectors);
       }
     }
     return {
