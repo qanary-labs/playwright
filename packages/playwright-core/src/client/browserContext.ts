@@ -670,6 +670,10 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
     await this._closedPromise;
   }
 
+  async waitForRecordedActions(): Promise<void> {
+    await this._channel.waitForRecordedActions();
+  }
+
   async _enableRecorder(params: channels.BrowserContextEnableRecorderParams, eventSink?: RecorderEventSink) {
     if (eventSink)
       this._onRecorderEventSink = eventSink;

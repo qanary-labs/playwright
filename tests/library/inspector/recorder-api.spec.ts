@@ -1396,3 +1396,69 @@ test('leaves out a class the page adds to the icon when the pointer enters its c
   expect(selectors.length).toBeGreaterThan(0);
   expect(selectors.filter(s => s.includes('is-active'))).toEqual([]);
 });
+
+// zazu's block-steps spec, prelude: a replay that hands over to the user must know that none
+// of its actions is still on its way, or the late one becomes a step the user never took.
+// Describing an iframe action takes a round trip into its parent; this click's own handler then
+// keeps the page busy for half a second, so the action arrives well after the click returns.
+const BUSY_AFTER_CLICK = `<button id="inner" onclick="setTimeout(() => { const end = Date.now() + 500; while (Date.now() < end); }, 0)">Go</button>`;
+
+async function recorderInstalled(frame: import('@playwright/test').Frame) {
+  await expect.poll(() => frame.evaluate(() => typeof (window as any).__pw_resolveAll).catch(() => 'undefined')).toBe('function');
+}
+
+test('waitForRecordedActions waits for an iframe action still being described', async ({ context }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: string[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string }) => events.push(payload.action));
+  const page = await recordedContext.newPage();
+  await page.setContent(`<iframe srcdoc='${BUSY_AFTER_CLICK}'></iframe>`);
+  const frame = page.frames()[1];
+  await recorderInstalled(frame);
+  await frame.locator('#inner').click();
+  await recordedContext.waitForRecordedActions();
+  expect(events).toEqual(['click']);
+  await recordedContext.close();
+});
+
+test('waitForRecordedActions emits actions in the order the pages reported them', async ({ context, server }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: string[] = [];
+  recordedContext.on('recorderaction' as any, (payload: { action: string, text?: string }) => events.push(`${payload.action} ${payload.text}`));
+  const first = await recordedContext.newPage();
+  await first.setContent(`<iframe srcdoc='${BUSY_AFTER_CLICK}'></iframe>`);
+  await recorderInstalled(first.frames()[1]);
+  // Another site, so another renderer: the fill is not held up by the first page being busy.
+  server.setRoute('/input.html', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<input id="name">`);
+  });
+  const second = await recordedContext.newPage();
+  await second.goto(server.CROSS_PROCESS_PREFIX + '/input.html');
+  await recorderInstalled(second.mainFrame());
+  await first.frames()[1].locator('#inner').click();
+  await second.locator('#name').fill('Ada');
+  await recordedContext.waitForRecordedActions();
+  // In the order the pages reported them: the iframe click, still being described while the
+  // fill was reported, is not overtaken by it.
+  expect(events.map(e => e.split(' ')[0])).toEqual(['click', 'fill']);
+  await recordedContext.close();
+});
+
+test('waitForRecordedActions resolves at once without a recorder', async ({ context }) => {
+  const page = await context.newPage();
+  await page.setContent(`<button>Go</button>`);
+  await page.locator('button').click();
+  await context.waitForRecordedActions();
+});
+
+test('waitForRecordedActions resolves while a frame is navigating', async ({ context, server }) => {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const page = await recordedContext.newPage();
+  await page.goto(server.EMPTY_PAGE);
+  server.setRoute('/slow.html', () => {});
+  const navigation = page.goto(server.PREFIX + '/slow.html', { timeout: 0 }).catch(() => {});
+  await recordedContext.waitForRecordedActions();
+  await recordedContext.close();
+  await navigation;
+});

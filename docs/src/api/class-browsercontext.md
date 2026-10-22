@@ -1825,6 +1825,40 @@ Receives the [Page] object and resolves to truthy value when the waiting should 
 ### param: BrowserContext.waitForPage.callback = %%-java-wait-for-event-callback-%%
 * since: v1.9
 
+## async method: BrowserContext.waitForRecordedActions
+* since: v1.60
+* from Qanary fork
+
+Resolves once every action the recorder has seen so far has been emitted as
+[`event: BrowserContext.recorderaction`]. Actions are reported by the page asynchronously, and an
+action inside an iframe takes longer to describe than one in the main frame: use this to know that
+nothing performed before the call is still on its way. Actions are emitted in the order the page
+reported them. Resolves at once when [`option: Browser.newContext.recordSelectors`] is not enabled.
+
+**Usage**
+
+```js
+await page.getByRole('button', { name: 'Log in' }).click();
+await context.waitForRecordedActions();
+// Every recorderaction caused by the click has been emitted.
+```
+
+```java
+browserContext.waitForRecordedActions();
+```
+
+```python async
+await context.wait_for_recorded_actions()
+```
+
+```python sync
+context.wait_for_recorded_actions()
+```
+
+```csharp
+await context.WaitForRecordedActionsAsync();
+```
+
 ## async method: BrowserContext.waitForEvent2
 * since: v1.8
 * langs: python

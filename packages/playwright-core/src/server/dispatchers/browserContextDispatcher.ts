@@ -357,6 +357,12 @@ export class BrowserContextDispatcher extends Dispatcher<BrowserContext, channel
       await progress.race(recorder.setMode('none'));
   }
 
+  async waitForRecordedActions(params: channels.BrowserContextWaitForRecordedActionsParams, progress: Progress): Promise<void> {
+    const recorder = await progress.race(Recorder.existingForContext(this._context));
+    if (recorder)
+      await recorder.waitForRecordedActions(progress);
+  }
+
   async exposeConsoleApi(params: channels.BrowserContextExposeConsoleApiParams, progress: Progress): Promise<void> {
     await this._context.exposeConsoleApi(progress);
   }

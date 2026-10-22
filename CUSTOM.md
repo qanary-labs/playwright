@@ -197,6 +197,21 @@
   generation. Full design: zazu's `docs/specs/replay-without-capture.md`. Guarded by the three
   "capture off" tests in `tests/library/inspector/recorder-api.spec.ts`.
 
+- **`BrowserContext.waitForRecordedActions()`** (`Recorder.waitForRecordedActions` and the
+  `_recordQueue` in `server/recorder.ts`, the internal `waitForRecordedActions` protocol method;
+  since 2026-10-22). Resolves once every action the page reported so far has been emitted as
+  `recorderaction`. Upstream emits an action only after describing its frame, which for an iframe
+  takes round trips into the parent, so an action can reach the client long after the call that
+  caused it returned, and a later main-frame action could overtake it. The server now records
+  actions one at a time, in the order the page reported them; the wait does one round trip into
+  every frame (a frame's binding calls arrive before its answer), yields a turn so their handlers
+  join the queue, and awaits the queue. Consumer: zazu's record prelude, which replays a block
+  muted and must not unmute while a replayed action is still on its way, or it becomes a step
+  the user never took (zazu's `docs/specs/block-steps.md`). Guarded by the four
+  `waitForRecordedActions` tests in `tests/library/inspector/recorder-api.spec.ts`: the iframe
+  one fails with the wait emptied or without its queue wait, the ordering one without the
+  queue.
+
 - **`window.__pw_resolveAll(selectors, stableMs, token)`** — main-world global installed by
   `PollingRecorder` in every frame (same pattern as `__pw_recorderHoverDebug`), so it
   exists wherever `recordSelectors` is on; consumer: zazu's run mode, see its

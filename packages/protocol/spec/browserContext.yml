@@ -235,6 +235,9 @@ BrowserContext:
     disableRecorder:
       internal: true
 
+    waitForRecordedActions:
+      internal: true
+
     exposeConsoleApi:
       internal: true
 

@@ -10043,6 +10043,28 @@ export interface BrowserContext {
 
 
   /**
+   * - from Qanary fork
+   *
+   * Resolves once every action the recorder has seen so far has been emitted as
+   * [browserContext.on('recorderaction')](https://playwright.dev/docs/api/class-browsercontext#browser-context-event-recorderaction).
+   * Actions are reported by the page asynchronously, and an action inside an iframe takes longer to describe than one
+   * in the main frame: use this to know that nothing performed before the call is still on its way. Actions are emitted
+   * in the order the page reported them. Resolves at once when
+   * [`recordSelectors`](https://playwright.dev/docs/api/class-browser#browser-new-context-option-record-selectors) is
+   * not enabled.
+   *
+   * **Usage**
+   *
+   * ```js
+   * await page.getByRole('button', { name: 'Log in' }).click();
+   * await context.waitForRecordedActions();
+   * // Every recorderaction caused by the click has been emitted.
+   * ```
+   *
+   */
+  waitForRecordedActions(): Promise<void>;
+
+  /**
    * Playwright has ability to mock clock and passage of time.
    */
   clock: Clock;

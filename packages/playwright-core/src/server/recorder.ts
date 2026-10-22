@@ -88,6 +88,7 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
   private _recorderMode: 'default' | 'api';
 
   private _signalProcessor: RecorderSignalProcessor;
+  private _recordQueue: Promise<void> = Promise.resolve();
   private _pageAliases = new Map<Page, string>();
   private _lastPopupOrdinal = 0;
   private _lastDialogOrdinal = -1;
@@ -588,9 +589,31 @@ export class Recorder extends EventEmitter<RecorderEventMap> implements Instrume
     actionInContext.endTime = monotonicTime();
   }
 
-  private async _recordAction(progress: Progress, frame: Frame, action: actions.Action) {
-    const actionInContext = await this._createActionInContext(progress, frame, action);
-    this._signalProcessor.addAction(actionInContext);
+  // One at a time, in the order the page reported them: describing an iframe takes round trips
+  // into its parent that a main-frame action does not, and must not let a later action overtake
+  // it. waitForRecordedActions awaits this chain.
+  private _recordAction(progress: Progress, frame: Frame, action: actions.Action): Promise<void> {
+    const recorded = this._recordQueue.then(async () => {
+      const actionInContext = await this._createActionInContext(progress, frame, action);
+      this._signalProcessor.addAction(actionInContext);
+    });
+    this._recordQueue = recorded.catch(() => {});
+    return recorded;
+  }
+
+  // Resolves once every action the page reported so far has been emitted (zazu's block-steps
+  // spec, prelude). The page reports an action through a binding, and a frame's binding calls
+  // reach the server before its answer to a later evaluation: one round trip into every frame
+  // collects the calls still on their way, a turn of the event loop lets their handlers join
+  // the queue, and the queue's end is the last of them emitted. Events and the answer to this
+  // call share the client connection, so the client has them all when it returns.
+  async waitForRecordedActions(progress: Progress): Promise<void> {
+    const frames = this._context.pages().flatMap(page => page.frames());
+    // A frame without a context has none to report from: its document is gone, and its calls
+    // arrived before the event that took the context away.
+    await progress.race(Promise.all(frames.map(frame => frame.nonStallingRawEvaluateInExistingMainContext('0').catch(() => {}))));
+    await progress.race(new Promise(resolve => setImmediate(resolve)));
+    await progress.race(this._recordQueue);
   }
 
   private _onFrameNavigated(frame: Frame, page: Page) {

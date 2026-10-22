@@ -1345,6 +1345,7 @@ export interface BrowserContextChannel extends BrowserContextEventTarget, EventT
   pause(params?: BrowserContextPauseParams, progress?: Progress): Promise<BrowserContextPauseResult>;
   enableRecorder(params: BrowserContextEnableRecorderParams, progress?: Progress): Promise<BrowserContextEnableRecorderResult>;
   disableRecorder(params?: BrowserContextDisableRecorderParams, progress?: Progress): Promise<BrowserContextDisableRecorderResult>;
+  waitForRecordedActions(params?: BrowserContextWaitForRecordedActionsParams, progress?: Progress): Promise<BrowserContextWaitForRecordedActionsResult>;
   exposeConsoleApi(params?: BrowserContextExposeConsoleApiParams, progress?: Progress): Promise<BrowserContextExposeConsoleApiResult>;
   newCDPSession(params: BrowserContextNewCDPSessionParams, progress?: Progress): Promise<BrowserContextNewCDPSessionResult>;
   createTempFiles(params: BrowserContextCreateTempFilesParams, progress?: Progress): Promise<BrowserContextCreateTempFilesResult>;
@@ -1648,6 +1649,9 @@ export type BrowserContextEnableRecorderResult = void;
 export type BrowserContextDisableRecorderParams = {};
 export type BrowserContextDisableRecorderOptions = {};
 export type BrowserContextDisableRecorderResult = void;
+export type BrowserContextWaitForRecordedActionsParams = {};
+export type BrowserContextWaitForRecordedActionsOptions = {};
+export type BrowserContextWaitForRecordedActionsResult = void;
 export type BrowserContextExposeConsoleApiParams = {};
 export type BrowserContextExposeConsoleApiOptions = {};
 export type BrowserContextExposeConsoleApiResult = void;
