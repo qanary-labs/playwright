@@ -329,8 +329,8 @@ export class Locator implements api.Locator {
     return result.snapshot;
   }
 
-  async generateSelectors(options: { maxSelectors?: number } = {}): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][] }> {
-    return await this._frame._channel.generateSelectors({ selector: this._selector, maxSelectors: options.maxSelectors, timeout: this._frame._timeout() });
+  async generateSelectors(options: { maxSelectors?: number, fingerprint?: boolean, collection?: boolean } = {}): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][], fingerprint?: any, collection?: any }> {
+    return await this._frame._channel.generateSelectors({ selector: this._selector, maxSelectors: options.maxSelectors, fingerprint: options.fingerprint, collection: options.collection, timeout: this._frame._timeout() });
   }
 
   async scrollIntoViewIfNeeded(options: channels.ElementHandleScrollIntoViewIfNeededOptions & TimeoutOptions = {}) {

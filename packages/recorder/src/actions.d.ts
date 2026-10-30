@@ -63,6 +63,35 @@ export type ActionWithSelector = ActionBase & {
   // box has no area. On the base type: every locator-bearing action gets one.
   // See zazu's docs/specs/self-healing.md.
   point?: Point,
+  // What the recorded element is, in human terms, and whether it is one of several
+  // copies. Read with `point`, on the same element. See zazu's docs/specs/step-intent.md.
+  fingerprint?: Fingerprint,
+  // On a repeated element: selectors for the set of copies and for the element inside
+  // one copy. See zazu's docs/specs/collection-locators.md.
+  collection?: Collection,
+};
+
+export type FingerprintContext = { role: string, name: string };
+
+export type Fingerprint = {
+  role: string,
+  name: string,
+  tag: string,
+  // The element's visible text, never a field's value. Capped at 100 characters.
+  text?: string,
+  // Fields: their label, else their placeholder.
+  label?: string,
+  // Up to 3: the nearest meaningful ancestors, innermost first, then the nearest heading.
+  context: FingerprintContext[],
+  // Present when the element is one of `count` structural copies, the `index`th from 0.
+  repeat?: { index: number, count: number },
+};
+
+export type Collection = {
+  // Each matches every copy, and nothing outside their parent.
+  items: RankedSelector[],
+  // Each matches exactly one element in every copy, relative to the copy.
+  target: RankedSelector[],
 };
 
 export type ClickAction = ActionWithSelector & {

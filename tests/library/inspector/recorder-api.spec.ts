@@ -1462,3 +1462,249 @@ test('waitForRecordedActions resolves while a frame is navigating', async ({ con
   await recordedContext.close();
   await navigation;
 });
+
+// zazu's step-intent spec (§The fingerprint) and collection-locators spec: what the recorded
+// element is, whether it is one of several copies, and how to name the copies.
+async function recordPayloads(context) {
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+  const page = await recordedContext.newPage();
+  const payload = async (action: string) => {
+    await expect.poll(() => events.filter(e => e.action === action).length).toBeGreaterThan(0);
+    return events.filter(e => e.action === action).at(-1);
+  };
+  return { recordedContext, page, payload };
+}
+
+function cards(count: number, card: (i: number) => string): string {
+  return Array.from({ length: count }, (_, i) => card(i)).join('');
+}
+
+test('records the fingerprint of a clicked element, with its context and nearest heading', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`
+    <main>
+      <h2>Featured</h2>
+      <h3 hidden>Hidden title</h3>
+      <section aria-label="Deals">
+        <form aria-label="Newsletter" onsubmit="return false">
+          <button type="button">Subscribe   now</button>
+        </form>
+      </section>
+    </main>`);
+  await page.getByRole('button', { name: 'Subscribe now' }).click();
+
+  expect((await payload('click')).fingerprint).toEqual({
+    role: 'button',
+    name: 'Subscribe now',
+    tag: 'button',
+    text: 'Subscribe now',
+    context: [{ role: 'form', name: 'Newsletter' }, { role: 'region', name: 'Deals' }, { role: 'heading', name: 'Featured' }],
+  });
+  await recordedContext.close();
+});
+
+test('records a field\'s label in its fingerprint, never its value', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`
+    <label for="email">Email address</label><input id="email" />
+    <input id="city" placeholder="Your city" />
+    <textarea id="note">initial</textarea>`);
+  await page.locator('#email').fill('secret-value');
+  const email = (await payload('fill')).fingerprint;
+  expect(email).toEqual({ role: 'textbox', name: 'Email address', tag: 'input', label: 'Email address', context: [] });
+
+  await page.locator('#city').fill('Lyon');
+  await expect.poll(async () => (await payload('fill')).fingerprint.label).toBe('Your city');
+
+  await page.locator('#note').fill('a typed note');
+  await expect.poll(async () => (await payload('fill')).fingerprint.tag).toBe('textarea');
+  const note = (await payload('fill')).fingerprint;
+  expect(note.text).toBeUndefined();
+  expect(JSON.stringify([email, note])).not.toMatch(/secret-value|typed note|initial/);
+  await recordedContext.close();
+});
+
+test('records the repeat of a target inside a card list', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div class="grid">${cards(12, i => `<div class="card"><h3>Product ${i}</h3><div class="actions"><button>Add to cart</button></div></div>`)}</div>`);
+  await page.locator('.card').nth(2).getByRole('button').click();
+
+  const fingerprint = (await payload('click')).fingerprint;
+  expect(fingerprint.repeat).toEqual({ index: 2, count: 12 });
+  expect(fingerprint.context).toEqual([{ role: 'heading', name: 'Product 2' }]);
+  await recordedContext.close();
+});
+
+test('records the repeat of a cell\'s control in a table row', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<table><thead><tr><th>Name</th><th></th></tr></thead><tbody>${cards(4, i => `<tr><td>Row ${i}</td><td><button>Edit</button></td></tr>`)}</tbody></table>`);
+  await page.getByRole('row', { name: 'Row 3' }).getByRole('button').click();
+
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 3, count: 4 });
+  await recordedContext.close();
+});
+
+test('records no repeat on a unique button, nor when siblings share a tag but not the target\'s path', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`
+    <div><button id="alone">Alone</button></div>
+    <div class="row"><span><button id="mixed">Mixed</button></span></div>
+    <div class="row"><a href="#">A link, not a button</a></div>
+    <div class="row"><span>No button here</span></div>`);
+  await page.locator('#alone').click();
+  expect((await payload('click')).fingerprint.repeat).toBeUndefined();
+  expect((await payload('click')).collection).toBeUndefined();
+
+  await page.locator('#mixed').click();
+  expect((await payload('click')).fingerprint.repeat).toBeUndefined();
+  await recordedContext.close();
+});
+
+test('bounds the repetition walk on a deep tree', async ({ context }) => {
+  // The copies are 20 levels above the target: past the walk's 15 hops, so no repeat.
+  const deep = (inner: string) => '<div>'.repeat(20) + inner + '</div>'.repeat(20);
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<section>${deep('<button id="a">Go</button>')}${deep('<button>Go</button>')}</section>`);
+  await page.locator('#a').click();
+  expect((await payload('click')).fingerprint.repeat).toBeUndefined();
+  await recordedContext.close();
+});
+
+test('records the collection of a card list: items match every card and nothing else, target every button', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`
+    <ul class="nav"><li>Home</li><li>About</li></ul>
+    <div class="grid">${cards(12, i => `<div class="card" data-kind="product"><h3>Product ${i}</h3><button>Add to cart</button></div>`)}</div>`);
+  await page.locator('.card').nth(4).getByRole('button').click();
+
+  const { collection } = await payload('click');
+  expect(collection.items.length).toBeGreaterThan(0);
+  expect(collection.items.length).toBeLessThanOrEqual(5);
+  for (const { selector } of collection.items) {
+    const matched = await page.locator(selector).evaluateAll(elements => elements.map(e => e.className));
+    expect(matched, selector).toEqual(Array(12).fill('card'));
+  }
+  expect(collection.items.map(i => i.selector)).toContain('div[data-kind="product"]');
+  expect(collection.items.at(-1).selector).toMatch(/>> :scope > div$/);
+  for (const { selector } of collection.target) {
+    for (let i = 0; i < 12; i++)
+      await expect(page.locator('.card').nth(i).locator(selector), selector).toHaveCount(1);
+  }
+  expect(collection.target.at(-1).selector).toBe(':scope > button');
+  await recordedContext.close();
+});
+
+test('records the collection of table rows by role, without the header row', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<table><tbody><tr><th>Name</th><th>Action</th></tr>${cards(3, i => `<tr><td>Row ${i}</td><td><button>Edit</button></td></tr>`)}</tbody></table>`);
+  await page.getByRole('row', { name: 'Row 1' }).getByRole('button').click();
+
+  const { fingerprint, collection } = await payload('click');
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  const byRole = collection.items.find(i => i.selector.includes('internal:role=row'));
+  expect(byRole).toBeTruthy();
+  // The header row is a row too, but holds no button: the consumer keeps only the copies
+  // that contain the target. What it must never match is something outside the table body.
+  const rows = await page.locator(byRole.selector).evaluateAll(elements => elements.map(e => e.textContent));
+  expect(rows.filter(text => text.startsWith('Row'))).toHaveLength(3);
+  await recordedContext.close();
+});
+
+test('drops a target selector named by its own copy\'s text', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div>${cards(3, i => `<div class="card"><button data-sku="${40 + i}">Buy ${40 + i}</button></div>`)}</div>`);
+  await page.getByRole('button', { name: 'Buy 42' }).click();
+
+  const { selectors, collection } = await payload('click');
+  expect(selectors.some(s => s.selector.includes('Buy 42'))).toBe(true);
+  expect(collection.target.length).toBeGreaterThan(0);
+  expect(collection.target.some(s => /42/.test(s.selector))).toBe(false);
+  await recordedContext.close();
+});
+
+test('keeps the collection valid with an ad card among the copies', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div class="grid">
+    <div class="card"><h3>One</h3><button>Add</button></div>
+    <div class="card ad"><a href="#">Sponsored</a></div>
+    <div class="card"><h3>Two</h3><button>Add</button></div>
+    <div class="card"><h3>Three</h3><button>Add</button></div></div>`);
+  await page.getByRole('button').nth(1).click();
+
+  const { fingerprint, collection } = await payload('click');
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  for (const { selector } of collection.target) {
+    for (const name of ['One', 'Two', 'Three'])
+      await expect(page.locator('.card', { hasText: name }).locator(selector), selector).toHaveCount(1);
+  }
+  await recordedContext.close();
+});
+
+test('records no collection when validation empties a list', async ({ context }) => {
+  // The copies hold different numbers of buttons, each named by its copy's own text: no
+  // selector relative to a copy names one button in every copy, by name or by position.
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div>
+    <div><button>X0</button><button>Y0</button></div>
+    <div><button>Y1</button></div>
+    <div><button>Z2</button><button>W2</button><button>V2</button></div></div>`);
+  await page.getByRole('button', { name: 'Y0' }).click();
+
+  const { fingerprint, collection } = await payload('click');
+  expect(fingerprint.repeat).toEqual({ index: 0, count: 3 });
+  expect(collection).toBeUndefined();
+  await recordedContext.close();
+});
+
+test('records the collection inside an iframe', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<iframe id="shop" srcdoc='<ul>${cards(3, i => `<li><span>Item ${i}</span><button>Pick</button></li>`)}</ul>'></iframe>`);
+  const frame = page.frames()[1];
+  await expect.poll(() => frame.evaluate(() => typeof (window as any).__pw_resolveAll === 'function')).toBe(true);
+  await page.frameLocator('#shop').locator('li').nth(2).getByRole('button').click();
+
+  const { fingerprint, collection, frameSelectors } = await payload('click');
+  expect(frameSelectors).toHaveLength(1);
+  expect(fingerprint.repeat).toEqual({ index: 2, count: 3 });
+  for (const { selector } of collection.items)
+    await expect(page.frameLocator('#shop').locator(selector), selector).toHaveCount(3);
+  await recordedContext.close();
+});
+
+test('records the collection inside a shadow root', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div id="host"></div><script>
+    document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =
+      '<ul>' + [0, 1, 2].map(i => '<li class="item"><span>Item ' + i + '</span><button>Pick</button></li>').join('') + '</ul>';
+  </script>`);
+  await page.locator('li').nth(1).getByRole('button').click();
+
+  const { fingerprint, collection } = await payload('click');
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  for (const { selector } of collection.items)
+    await expect(page.locator(selector), selector).toHaveCount(3);
+  for (const { selector } of collection.target)
+    await expect(page.locator('li').nth(0).locator(selector), selector).toHaveCount(1);
+  await recordedContext.close();
+});
+
+test('generateSelectors returns the fingerprint and the collection a recording carries', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`<div class="grid">${cards(3, i => `<div class="card"><h3>P${i}</h3><button>Add</button></div>`)}</div><button id="alone">Alone</button>`);
+  await page.locator('.card').nth(1).getByRole('button').click();
+  const recorded = await payload('click');
+
+  const repeated = await page.locator('.card').nth(1).getByRole('button').generateSelectors({ fingerprint: true, collection: true });
+  expect(repeated.fingerprint).toEqual(recorded.fingerprint);
+  expect(repeated.collection).toEqual(recorded.collection);
+
+  const unique = await page.locator('#alone').generateSelectors({ fingerprint: true, collection: true });
+  expect(unique.fingerprint).toEqual({ role: 'button', name: 'Alone', tag: 'button', text: 'Alone', context: [{ role: 'heading', name: 'P2' }] });
+  expect(unique.collection).toBeUndefined();
+
+  const plain = await page.locator('#alone').generateSelectors();
+  expect(plain.fingerprint).toBeUndefined();
+  await recordedContext.close();
+});
