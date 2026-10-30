@@ -1273,9 +1273,13 @@ scheme.FrameAriaSnapshotResult = tObject({
 scheme.FrameGenerateSelectorsParams = tObject({
   selector: tString,
   maxSelectors: tOptional(tInt),
+  fingerprint: tOptional(tBoolean),
+  collection: tOptional(tBoolean),
   timeout: tFloat,
 });
 scheme.FrameGenerateSelectorsResult = tObject({
+  fingerprint: tOptional(tAny),
+  collection: tOptional(tAny),
   selectors: tArray(tObject({
     selector: tString,
     score: tFloat,

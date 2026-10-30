@@ -120,3 +120,32 @@ Normalized click point, with each axis in `[0, 1]`, relative to the recorded ele
   - `y` <[float]>
 
 Where the recorded element is on the whole page: the center of its bounding box in the document coordinates of its own frame — viewport position plus the frame's scroll offset, in CSS pixels — read on the element the selectors were generated for (after any retarget to an interactive ancestor, like [`property: RecorderActionPayload.positionRatio`]). Present on every action that carries selectors, clicks and keyboard-driven actions alike, so a consumer can later tell apart elements the selectors no longer distinguish (a repeated component whose distinguishing attributes drifted) by where the element was. Absent when the element's box has no area. Unlike [`property: RecorderActionPayload.positionRatio`], it says which element, not where on it.
+
+## property: RecorderActionPayload.fingerprint
+* since: v1.60
+- type: ?<[Object]>
+  - `role` <[string]> The element's ARIA role, empty when it has none.
+  - `name` <[string]> Its accessible name, capped at 100 characters.
+  - `tag` <[string]> Its tag name.
+  - `text` ?<[string]> Its visible text, capped at 100 characters. Never the value of a field.
+  - `label` ?<[string]> For a field: its label, else its placeholder.
+  - `context` <[Array]<[Object]>> Up to 3 entries: the nearest landmark, region, form, dialog, list item, row, article or table ancestors, innermost first, then the nearest visible heading before the element.
+    - `role` <[string]>
+    - `name` <[string]>
+  - `repeat` ?<[Object]> Present when the element is one of several structural copies.
+    - `index` <[int]> Which copy, from 0, in document order.
+    - `count` <[int]> How many copies.
+
+What the recorded element is, in human terms, read on the same element and in the same tick as [`property: RecorderActionPayload.point`]. `repeat` is found by walking up from the element to the first ancestor whose parent holds other children of its tag and role in which the path down to the element (tag and role of each hop) also matches: a card in a list of cards, a row in a table. Present on every action that carries selectors.
+
+## property: RecorderActionPayload.collection
+* since: v1.60
+- type: ?<[Object]>
+  - `items` <[Array]<[Object]>> Selectors matching every copy and nothing outside their parent, strongest first, at most 5.
+    - `selector` <[string]>
+    - `score` <[float]>
+  - `target` <[Array]<[Object]>> Selectors relative to one copy, each matching exactly one element in every copy, strongest first, at most 5.
+    - `selector` <[string]>
+    - `score` <[float]>
+
+Present when [`property: RecorderActionPayload.fingerprint`] has a `repeat` and both lists validated: selectors naming the set of copies and the element inside a copy, so a consumer can act on "the first copy" whichever copy that is, where [`property: RecorderActionPayload.selectors`] name the copy the user acted on. In the element's frame: [`property: RecorderActionPayload.frameSelectors`] apply to both.

@@ -2417,12 +2417,18 @@ export type FrameAriaSnapshotResult = {
 export type FrameGenerateSelectorsParams = {
   selector: string,
   maxSelectors?: number,
+  fingerprint?: boolean,
+  collection?: boolean,
   timeout: number,
 };
 export type FrameGenerateSelectorsOptions = {
   maxSelectors?: number,
+  fingerprint?: boolean,
+  collection?: boolean,
 };
 export type FrameGenerateSelectorsResult = {
+  fingerprint?: any,
+  collection?: any,
   selectors: {
     selector: string,
     score: number,

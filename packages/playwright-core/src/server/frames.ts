@@ -1819,13 +1819,23 @@ export class Frame extends SdkObject<FrameEventMap> {
   // mode's (`recordSelectors: true` hardwires collectSelectors, same testIdAttributeName
   // fallback chain), and generation runs on the element `selector` strictly resolves to,
   // so ranking and interactive-ancestor promotion match a fresh recording by construction.
-  async generateSelectors(progress: Progress, selector: string, maxSelectors?: number): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][] }> {
+  // The fingerprint and the collection, on request, are read on the element the selectors
+  // name, as the recorder reads them (zazu's step-intent and collection-locators specs).
+  async generateSelectors(progress: Progress, selector: string, maxSelectors?: number, describe: { fingerprint?: boolean, collection?: boolean } = {}): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][], fingerprint?: any, collection?: any }> {
     return await this._retryWithProgressIfNotConnected(progress, selector, { strict: true, performActionPreChecks: true }, async (progress, handle) => {
       const testIdAttributeName = this._page.browserContext.selectors().testIdAttributeName() || 'data-testid';
-      const generated = await progress.race(handle.evaluateInUtility(([injected, element, { testIdAttributeName, maxSelectors }]) => {
-        const result = injected.generateSelector(element, { testIdAttributeName, multiple: true, collectSelectors: true, maxSelectors });
-        return { selectors: result.rankedSelectors };
-      }, { testIdAttributeName, maxSelectors }));
+      const generated = await progress.race(handle.evaluateInUtility(([injected, element, { testIdAttributeName, maxSelectors, describe }]) => {
+        const generate = (target: Element, root?: Element) => injected.generateSelector(target, { testIdAttributeName, multiple: true, collectSelectors: true, maxSelectors, root });
+        const result = generate(element);
+        if (!describe.fingerprint && !describe.collection)
+          return { selectors: result.rankedSelectors };
+        const described = injected.describeElement(result.elements?.[0] ?? element, (target, root) => generate(target, root).rankedSelectors);
+        return {
+          selectors: result.rankedSelectors,
+          ...(describe.fingerprint ? { fingerprint: described.fingerprint } : {}),
+          ...(describe.collection && described.collection ? { collection: described.collection } : {}),
+        };
+      }, { testIdAttributeName, maxSelectors, describe }));
       if (generated === 'error:notconnected')
         return generated;
       const { frameSelectors } = await generateFrameSelector(progress, handle._frame, maxSelectors);
