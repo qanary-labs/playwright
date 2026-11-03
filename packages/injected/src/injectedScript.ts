@@ -59,7 +59,7 @@ export type ElementStateQueryResult = { matches: boolean, received?: string | 'e
 export type ExpectReceived = { value?: any, ariaSnapshot?: string };
 
 export type HitTargetInterceptionResult = {
-  stop: () => 'done' | { hitTargetDescription: string };
+  stop: () => 'done' | 'error:undelivered' | { hitTargetDescription: string };
 };
 
 interface WebKitLegacyDeviceOrientationEvent extends DeviceOrientationEvent {
@@ -1080,6 +1080,33 @@ export class InjectedScript {
     return emptyLabelHit(this.hitTargetChain(hitPoint, label), control);
   }
 
+  // Undelivered-click fallback: watches the click target (retargeted as the hit-target check
+  // does) from now on. `quiet` resolves once `quietMs` pass without a mutation in its subtree,
+  // with whether any mutation happened since the watch started.
+  watchSubtree(node: Node): { quiet: (quietMs: number) => Promise<boolean> } {
+    const element = this.retarget(node, 'button-link') ?? node;
+    let changed = false;
+    let onMutation = () => {};
+    const observer = new MutationObserver(() => {
+      changed = true;
+      onMutation();
+    });
+    observer.observe(element, { childList: true, subtree: true, attributes: true, characterData: true });
+    return {
+      quiet: quietMs => new Promise<boolean>(resolve => {
+        const done = () => {
+          observer.disconnect();
+          resolve(changed);
+        };
+        let timer = this.window.setTimeout(done, quietMs);
+        onMutation = () => {
+          this.window.clearTimeout(timer);
+          timer = this.window.setTimeout(done, quietMs);
+        };
+      }),
+    };
+  }
+
   // Life of a pointer action, for example click.
   //
   // 0. Retry items 1 and 2 while action fails due to navigation or element being detached.
@@ -1110,7 +1137,7 @@ export class InjectedScript {
   //     2k. (injected) Event interceptor is removed.
   //     2l. All navigations triggered between 2g-2k are awaited to be either committed or canceled.
   //     2m. If failed, wait for increasing amount of time before the next retry.
-  setupHitTargetInterceptor(node: Node, action: 'hover' | 'tap' | 'mouse' | 'drag', hitPoint: { x: number, y: number } | undefined, blockAllEvents: boolean): HitTargetInterceptionResult | 'error:notconnected' | string /* hitTargetDescription */ {
+  setupHitTargetInterceptor(node: Node, action: 'hover' | 'tap' | 'mouse' | 'drag', hitPoint: { x: number, y: number } | undefined, blockAllEvents: boolean, reportUndelivered = false): HitTargetInterceptionResult | 'error:notconnected' | string /* hitTargetDescription */ {
     const element = this.retarget(node, 'button-link');
     if (!element || !element.isConnected)
       return 'error:notconnected';
@@ -1163,13 +1190,19 @@ export class InjectedScript {
     };
 
     const stop = () => {
+      // A concurrent action installing its own interceptor displaces this one, which then hears
+      // nothing whether the events came or not.
+      const displaced = this._hitTargetInterceptor !== listener;
       if (this._hitTargetInterceptor === listener)
         this._hitTargetInterceptor = undefined;
       // If we did not get any events, consider things working. Possible causes:
       // - JavaScript is disabled (webkit-only).
       // - Some <iframe> overlays the element from another frame.
       // - Hovering a disabled control prevents any events from firing.
-      return result || 'done';
+      // Fork addition (see CUSTOM.md): a plain click asks to hear about it instead, when nothing
+      // displaced this listener. A page that rewrites the element under a freshly arrived pointer
+      // leaves the browser pressing a detached node, and the press never reaches the document.
+      return result || (reportUndelivered && !displaced ? 'error:undelivered' : 'done');
     };
 
     // Note: this removes previous listener, just in case there are two concurrent clicks

@@ -20,6 +20,7 @@ import path from 'path';
 import mime from 'mime';
 
 import { isUnderTest } from '@utils/debug';
+import { monotonicTime } from '@isomorphic/time';
 import * as js from './javascript';
 import { prepareFilesForUpload } from './fileUploadUtils';
 import * as rawInjectedScriptSource from '../generated/injectedScriptSource';
@@ -45,7 +46,7 @@ type ActionName = 'click' | 'hover' | 'dblclick' | 'tap' | 'move and up' | 'move
 // element. `point`/`hitPoint`: where that happened, in viewport and frame coordinates, so a
 // recovery works from what the failed attempt already resolved instead of re-deriving it.
 type HitTargetInterception = { hitTargetDescription: string, revealedUnderPointer?: boolean, point?: types.Point, hitPoint?: types.Point };
-type PerformActionResult = 'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | 'error:optionsnotfound' | 'error:optionnotenabled' | { missingState: ElementState } | HitTargetInterception | 'done';
+type PerformActionResult = 'error:notvisible' | 'error:notconnected' | 'error:notinviewport' | 'error:optionsnotfound' | 'error:optionnotenabled' | 'error:undelivered' | { missingState: ElementState } | HitTargetInterception | 'done';
 
 // Cycled across retries by _retryPointerAction to scroll the element out from under sticky
 // overlays. Module-level because _retryAction counts retries against its length: only once
@@ -332,7 +333,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     };
   }
 
-  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> }): Promise<'error:notconnected' | 'done'> {
+  async _retryAction(progress: Progress, actionName: string, action: (progress: Progress, retry: number, settled: boolean) => Promise<PerformActionResult>, options: { trial?: boolean, force?: boolean, skipActionPreChecks?: boolean, noAutoWaiting?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> }): Promise<'error:notconnected' | 'done'> {
     let retry = 0;
     // We progressively wait longer between retries, up to 500ms.
     const waitTime = [0, 20, 100, 100, 500];
@@ -352,6 +353,10 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     // means the label will not get a box on its own; any other result starts it over.
     let consecutiveNotVisible = 0;
     let emptyLabelRecoveryAttempted = false;
+    // Fork addition (see CUSTOM.md): once a click is known not to have reached the page, every
+    // later attempt settles the pointer before pressing. Not reset by anything: what the page
+    // does under a freshly arrived pointer is the same on the next attempt.
+    let settled = false;
 
     while (true) {
       if (retry) {
@@ -378,7 +383,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
           emptyLabelRecoveryAttempted = false;
         }
       }
-      const result = await action(progress, retry);
+      const result = await action(progress, retry, settled);
       ++retry;
       if (typeof result !== 'object' || !('hitTargetDescription' in result)) {
         interceptionRevealedUnderPointer = false;
@@ -410,6 +415,13 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
         if (options.force || noAutoWaiting)
           throw new NonRecoverableDOMError('Element is outside of the viewport');
         progress.log('  element is outside of the viewport');
+        continue;
+      }
+      if (result === 'error:undelivered') {
+        if (noAutoWaiting)
+          throw new NonRecoverableDOMError('Click was not delivered: no pointer event reached the page');
+        progress.log(`  click not delivered: no pointer event reached the page${settled ? '' : ', retrying with the pointer settled'}`);
+        settled = true;
         continue;
       }
       if (result === 'error:optionsnotfound') {
@@ -453,16 +465,16 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
   }
 
   async _retryPointerAction(progress: Progress, actionName: ActionName, waitForEnabled: boolean, action: (progress: Progress, point: types.Point) => Promise<void>,
-    options: { waitAfter: boolean | 'disabled', recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
+    options: { waitAfter: boolean | 'disabled', reportUndelivered?: boolean, recoverFromUnreachableTarget?: (progress: Progress, interception: HitTargetInterception) => Promise<'done' | undefined>, recoverFromEmptyLabel?: (progress: Progress) => Promise<'done' | undefined> } & types.PointerActionOptions & types.PointerActionWaitOptions): Promise<'error:notconnected' | 'done'> {
     // Note: do not perform locator handlers checkpoint to avoid moving the mouse in the middle of a drag operation.
     const skipActionPreChecks = actionName === 'move and up';
-    return await this._retryAction(progress, actionName, async (progress, retry) => {
+    return await this._retryAction(progress, actionName, async (progress, retry, settled) => {
       // By default, we scroll with protocol method to reveal the action point.
       // However, that might not work to scroll from under position:sticky elements
       // that overlay the target element. To fight this, we cycle through different
       // scroll alignments. This works in most scenarios.
       const forceScrollOptions = scrollAlignments[retry % scrollAlignments.length];
-      return await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options);
+      return await this._performPointerAction(progress, actionName, waitForEnabled, action, forceScrollOptions, options, settled);
     }, { ...options, skipActionPreChecks });
   }
 
@@ -472,7 +484,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     waitForEnabled: boolean,
     action: (progress: Progress, point: types.Point) => Promise<void>,
     forceScrollOptions: ScrollIntoViewOptions | undefined,
-    options: { waitAfter: boolean | 'disabled' } & types.PointerActionOptions & types.PointerActionWaitOptions,
+    options: { waitAfter: boolean | 'disabled', reportUndelivered?: boolean } & types.PointerActionOptions & types.PointerActionWaitOptions,
+    settled = false,
   ): Promise<PerformActionResult> {
     const { force = false, position } = options;
 
@@ -545,7 +558,7 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       preliminaryHitTargetChecked = !!hitPoint;
       frameHitPoint = hitPoint;
       const actionType = actionName === 'move and up' ? 'drag' : ((actionName === 'hover' || actionName === 'tap') ? actionName : 'mouse');
-      const handle = await progress.race(this._evaluateHandleInUtility(([injected, node, { actionType, hitPoint, trial }]) => injected.setupHitTargetInterceptor(node, actionType, hitPoint, trial), { actionType, hitPoint, trial: !!options.trial } as const));
+      const handle = await progress.race(this._evaluateHandleInUtility(([injected, node, { actionType, hitPoint, trial, reportUndelivered }]) => injected.setupHitTargetInterceptor(node, actionType, hitPoint, trial, reportUndelivered), { actionType, hitPoint, trial: !!options.trial, reportUndelivered: !!options.reportUndelivered } as const));
       if (handle === 'error:notconnected')
         return handle;
       if (!handle._objectId) {
@@ -567,6 +580,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       let restoreModifiers: types.KeyboardModifier[] | undefined;
       if (options && options.modifiers)
         restoreModifiers = await this._page.keyboard.ensureModifiers(progress, options.modifiers);
+      if (settled)
+        await this._settlePointer(progress, point);
       progress.log(`  performing ${actionName} action`);
       await action(progress, point);
       if (restoreModifiers)
@@ -581,6 +596,8 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
           // When noWaitAfter is passed, we do not want to accidentally stall on
           // non-committed navigation blocking the evaluate.
           const hitTargetResult = await progress.race(stopHitTargetInterception);
+          if (hitTargetResult === 'error:undelivered')
+            return hitTargetResult;
           if (hitTargetResult !== 'done') {
             // The preliminary check passed for this same point moments ago — otherwise we
             // returned above — so this interceptor was not there before the pointer moved.
@@ -698,7 +715,34 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       // toggle the control twice, a modifier click means something else. Its guards refuse
       // any target that is not an empty label, the redirected one above included.
       recoverFromEmptyLabel: plainLeftSingleClick ? progress => target._clickEmptyLabel(progress) : undefined,
+      // Undelivered-click fallback (fork addition, see CUSTOM.md): same gate. Upstream counts a
+      // click that no pointer event reached as done; this one is retried with the pointer settled.
+      reportUndelivered: plainLeftSingleClick,
     });
+  }
+
+  // Undelivered-click fallback, run before the press of a settled attempt. A page that rewrites
+  // the element under a freshly arrived pointer leaves the browser holding a detached node as
+  // the one under the mouse, and the press goes there. Each move makes the browser hit-test
+  // again, so this moves onto the point until a move no longer changes the target, then lets
+  // the click's own move find what is there now. Capped, for a target that never stops changing.
+  private async _settlePointer(progress: Progress, point: types.Point) {
+    const deadline = monotonicTime() + 1000;
+    while (true) {
+      const watch = await progress.race(this._evaluateHandleInUtility(([injected, node]) => injected.watchSubtree(node), {}));
+      if (watch === 'error:notconnected')
+        return;
+      let changed: boolean;
+      try {
+        await this._page.mouse.move(progress, point.x, point.y);
+        changed = await progress.race(watch.evaluate(w => w.quiet(100)));
+      } finally {
+        watch.dispose();
+      }
+      if (!changed || monotonicTime() >= deadline)
+        return;
+      progress.log('  the target changed under the pointer, moving onto it again');
+    }
   }
 
   // Empty-label fallback, the recovery _click hands to _retryAction for a target that stays

@@ -453,6 +453,37 @@
   label inside a link; restraint: a label getting its box while waiting is clicked normally; and
   one page carrying both this fallback and a covered target, each clicked through its own path).
 
+- **A click that no pointer event reached is retried, then fails with that reason**
+  (`server/dom.ts`, `_retryAction`, `_performPointerAction`, `_click`, `_settlePointer`;
+  `injectedScript.ts`, `setupHitTargetInterceptor` and `watchSubtree`; since 2026-11-03).
+  Upstream's hit-target interceptor judges a click by the first pointer event it sees, and when
+  it sees none it reports the click as done. Some pages rewrite the element under a freshly
+  arrived pointer (volcom.fr's product cards uncomment a hidden slide on `mouseenter` by
+  rewriting their `innerHTML`, and each rewrite is a new arrival, so it chains). The browser
+  then holds a detached node as the one under the mouse, the press goes there, and nothing
+  reaches the document: upstream's click "succeeds" and the page never moves. Same in upstream
+  1.60.0. Full design: zazu's `docs/specs/undelivered-click-fallback.md`.
+
+  For a plain left single click only (the gate of the two fallbacks above),
+  `setupHitTargetInterceptor` is asked to report the absence of events: `stop()` returns
+  `'error:undelivered'` when no event reached its listener and no concurrent action displaced
+  that listener (a displaced one hears nothing whether the events came or not; upstream's
+  parallel-clicks test caught this). Every other caller keeps `result || 'done'`. A click
+  whose navigation tears the context down before `stop()` is read stays done, as before.
+  `_retryAction` then runs every later attempt settled: before the press, `_settlePointer`
+  moves onto the point, waits until the target's subtree has gone 100 ms without a mutation,
+  and moves again while a move still changes it, capped at 1 s; the click's own move then
+  makes the browser hit-test what is there now. A pause alone does not do it: without a fresh
+  move the browser keeps the detached node. If the press still never arrives, the click fails
+  on its timeout with `click not delivered: no pointer event reached the page` in the call log.
+  Known limit: a page whose own `window` capture listener, registered before Playwright's,
+  stops every one of the eight interceptor events now fails with that reason where upstream
+  passes.
+
+  Guarded by `tests/page/click-undelivered.spec.ts` (the fixture losing a press made on arrival,
+  in Chromium; the rewritten card clicked exactly once; an ordinary link; a link that
+  navigates at once; the failure with its reason; non-plain, trial and force clicks unchanged).
+
 - **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
   `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,
   passwords included: `textbox "Password": S3cr3t!`. zazu sends the snapshot to the model beside
