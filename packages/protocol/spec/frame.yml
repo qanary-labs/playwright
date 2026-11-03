@@ -99,8 +99,12 @@ Frame:
       parameters:
         selector: string
         maxSelectors: int?
+        fingerprint: boolean?
+        collection: boolean?
         timeout: float
       returns:
+        fingerprint: json?
+        collection: json?
         selectors:
           type: array
           items:
