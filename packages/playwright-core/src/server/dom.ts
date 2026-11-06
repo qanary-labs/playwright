@@ -1107,10 +1107,22 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
     // Settled-state recheck (fork addition, see CUSTOM.md): a framework that owns the checkbox
     // (Angular, PrimeNG) cancels the native toggle and sets `checked` from its model a moment
     // after the click. The state is read again until it lands or a second runs out; the click
-    // is never repeated, since a second one would toggle the box back.
-    const deadline = monotonicTime() + 1000;
+    // is never repeated, since a second one would toggle the box back. A page that first saves
+    // the choice to its server disables the box while the request runs: a disabled box is
+    // busy, so the second only starts once it is enabled again, within the action's timeout.
+    const isDisabled = async (progress: Progress) => {
+      const result = await progress.race(this.evaluateInUtility(([injected, node]) => injected.elementState(node, 'disabled'), {}));
+      if (result === 'error:notconnected' || result.received === 'error:notconnected')
+        throwElementIsNotAttached();
+      return result.matches;
+    };
+    let deadline = monotonicTime() + 1000;
     let finalState = await isChecked(progress);
-    while (finalState.matches !== state && monotonicTime() < deadline) {
+    while (finalState.matches !== state) {
+      if (await isDisabled(progress))
+        deadline = monotonicTime() + 1000;
+      else if (monotonicTime() >= deadline)
+        break;
       await progress.wait(50);
       finalState = await isChecked(progress);
     }

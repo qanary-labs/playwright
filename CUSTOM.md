@@ -492,11 +492,19 @@
   selected and the box checked about 40 ms after the throw). So the state is read again every
   50 ms, for up to 1 s, inside the action's own timeout. The click is never repeated, since a
   second click would toggle the box back. A box that never changes still throws the same error,
-  1 s later. Full design: zazu's `docs/specs/checkbox-settled-state.md`.
+  1 s later.
 
-  Guarded by `tests/page/page-check.spec.ts` (a box whose page sets its state 100 ms after the
-  click, checked and unchecked with one click each; a box that never changes still throws, after
-  one click).
+  A page that first saves the choice to its server (a React storefront: the box is disabled
+  while the request runs, and checked about 1.5 s after the click) outlasts that second. A
+  disabled box is busy, so while it stays disabled the second starts over, and the action's
+  timeout is the only bound. Full design: zazu's `docs/specs/checkbox-settled-state.md`.
+
+  Guarded by `tests/page/page-check.spec.ts`:
+  - a box whose page sets its state 100 ms after the click, checked and unchecked with one
+    click each;
+  - a box disabled for 1.5 s, then checked, with one click;
+  - a box that never changes, and one that comes back from its busy period unchanged: both
+    still throw, after one click.
 
 - **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
   `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,

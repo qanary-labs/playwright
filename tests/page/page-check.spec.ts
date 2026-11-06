@@ -248,3 +248,36 @@ it('should throw when the click never changes the state, without clicking again'
   expect(await page.evaluate(() => window['checkbox'].checked)).toBe(false);
   expect(await page.evaluate(() => window['clicks'])).toBe(1);
 });
+
+// A page that saves the choice to its server first: the box is disabled while the request
+// runs, and only then takes its new state.
+const busyCheckbox = (busyMs: number, changes: boolean) => `
+  <input id='checkbox' type='checkbox'>
+  <script>
+    window.clicks = 0;
+    checkbox.addEventListener('click', event => {
+      window.clicks++;
+      event.preventDefault();
+      checkbox.disabled = true;
+      setTimeout(() => {
+        checkbox.disabled = false;
+        if (${changes})
+          checkbox.checked = true;
+      }, ${busyMs});
+    });
+  </script>`;
+
+it('should check the box when the page sets its state after a busy period longer than the recheck', async ({ page }) => {
+  await page.setContent(busyCheckbox(1500, true));
+  await page.check('input');
+  expect(await page.evaluate(() => window['checkbox'].checked)).toBe(true);
+  expect(await page.evaluate(() => window['clicks'])).toBe(1);
+});
+
+it('should throw when the box comes back from its busy period unchanged, without clicking again', async ({ page }) => {
+  await page.setContent(busyCheckbox(300, false));
+  const error = await page.check('input').catch(e => e);
+  expect(error.message).toContain('Clicking the checkbox did not change its state');
+  expect(await page.evaluate(() => window['checkbox'].checked)).toBe(false);
+  expect(await page.evaluate(() => window['clicks'])).toBe(1);
+});
