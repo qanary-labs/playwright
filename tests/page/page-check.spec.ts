@@ -212,3 +212,39 @@ it('should throw when trying to uncheck radio button', async ({ page }) => {
   const error = await page.uncheck('#radio').catch(e => e);
   expect(error.message).toContain('Cannot uncheck radio button');
 });
+
+// A framework that owns the checkbox (Angular, PrimeNG) cancels the native toggle and sets
+// `checked` from its model a moment after the click.
+const modelOwnedCheckbox = (checked: boolean, settleMs: number | null) => `
+  <input id='checkbox' type='checkbox' ${checked ? 'checked' : ''}>
+  <script>
+    window.clicks = 0;
+    checkbox.addEventListener('click', event => {
+      window.clicks++;
+      event.preventDefault();
+      if (${settleMs} !== null)
+        setTimeout(() => checkbox.checked = ${!checked}, ${settleMs});
+    });
+  </script>`;
+
+it('should check the box when the page sets its state after the click', async ({ page }) => {
+  await page.setContent(modelOwnedCheckbox(false, 100));
+  await page.check('input');
+  expect(await page.evaluate(() => window['checkbox'].checked)).toBe(true);
+  expect(await page.evaluate(() => window['clicks'])).toBe(1);
+});
+
+it('should uncheck the box when the page sets its state after the click', async ({ page }) => {
+  await page.setContent(modelOwnedCheckbox(true, 100));
+  await page.uncheck('input');
+  expect(await page.evaluate(() => window['checkbox'].checked)).toBe(false);
+  expect(await page.evaluate(() => window['clicks'])).toBe(1);
+});
+
+it('should throw when the click never changes the state, without clicking again', async ({ page }) => {
+  await page.setContent(modelOwnedCheckbox(false, null));
+  const error = await page.check('input').catch(e => e);
+  expect(error.message).toContain('Clicking the checkbox did not change its state');
+  expect(await page.evaluate(() => window['checkbox'].checked)).toBe(false);
+  expect(await page.evaluate(() => window['clicks'])).toBe(1);
+});

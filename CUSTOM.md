@@ -484,6 +484,20 @@
   in Chromium; the rewritten card clicked exactly once; an ordinary link; a link that
   navigates at once; the failure with its reason; non-plain, trial and force clicks unchanged).
 
+- **`check` and `uncheck` wait for the state the page sets after the click** (`server/dom.ts`,
+  `_setChecked`; since 2026-11-06). Upstream reads the checked state once, right after the click,
+  and throws `Clicking the checkbox did not change its state` if it has not moved yet. A
+  framework that owns the checkbox cancels the native toggle and sets `checked` from its model a
+  moment later (PrimeNG's multiselect options in Angular, Eloquant's portal: the option is
+  selected and the box checked about 40 ms after the throw). So the state is read again every
+  50 ms, for up to 1 s, inside the action's own timeout. The click is never repeated, since a
+  second click would toggle the box back. A box that never changes still throws the same error,
+  1 s later. Full design: zazu's `docs/specs/checkbox-settled-state.md`.
+
+  Guarded by `tests/page/page-check.spec.ts` (a box whose page sets its state 100 ms after the
+  click, checked and unchecked with one click each; a box that never changes still throws, after
+  one click).
+
 - **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
   `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,
   passwords included: `textbox "Password": S3cr3t!`. zazu sends the snapshot to the model beside
