@@ -188,7 +188,7 @@ export class SelectorCollector {
   }
 
   // A nameless control named by the class of its icon: `internal:role=button >>
-  // internal:has=".al-icon-search"`. Its name, its text and its own classes say nothing, so
+  // internal:has=".app-icon-search"`. Its name, its text and its own classes say nothing, so
   // without this everything collected for it is positional, and a button added earlier in
   // the page moves the step onto another one. Only unique candidates are kept.
   addIconCandidates(injectedScript: InjectedScript, element: Element, root: Element | Document | undefined, verify: (selector: string) => boolean) {

@@ -1104,7 +1104,16 @@ export class ElementHandle<T extends Node = Node> extends js.JSHandle<T> {
       return result;
     if (options.trial)
       return 'done';
-    const finalState = await isChecked(progress);
+    // Settled-state recheck (fork addition, see CUSTOM.md): a framework that owns the checkbox
+    // (Angular, PrimeNG) cancels the native toggle and sets `checked` from its model a moment
+    // after the click. The state is read again until it lands or a second runs out; the click
+    // is never repeated, since a second one would toggle the box back.
+    const deadline = monotonicTime() + 1000;
+    let finalState = await isChecked(progress);
+    while (finalState.matches !== state && monotonicTime() < deadline) {
+      await progress.wait(50);
+      finalState = await isChecked(progress);
+    }
     if (finalState.matches !== state)
       throw new NonRecoverableDOMError('Clicking the checkbox did not change its state');
     return 'done';

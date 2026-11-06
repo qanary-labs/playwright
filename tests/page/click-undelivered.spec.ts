@@ -25,8 +25,8 @@ import type { Page } from '@playwright/test';
 const PICTURE = `<img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='375'%3E%3Crect width='300' height='375' fill='gray'/%3E%3C/svg%3E" style="display:block;width:300px;height:375px">`;
 const SLIDE = `<div style="position:relative;width:300px;height:375px">${PICTURE}</div>`;
 
-// volcom.fr's product card: on mouseenter, the image area uncomments its next hidden slide by
-// rewriting its whole innerHTML (Neptune.uncomment). One rewrite per arrival, and each rewrite
+// A store's product card: on mouseenter, the image area uncomments its next hidden slide by
+// rewriting its whole innerHTML. One rewrite per arrival, and each rewrite
 // replaces the node under the pointer, which the browser treats as a new arrival: a chain.
 // `onEveryMove` also rewrites it on every move, the click's own included, so no press can
 // ever land on a node that is still in the document.

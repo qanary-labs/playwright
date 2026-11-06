@@ -1038,29 +1038,29 @@ it.describe('selector generator', () => {
       await assertAllResolve(page, 'span:nth-child(2)', ranked.map(entry => entry.selector));
     });
 
-    // zazu's icon-only-control-recording spec. The Air Liquide order search: the magnifier
+    // zazu's icon-only-control-recording spec. A production order search: the magnifier
     // has no name, no text, no id, and its own classes are shared, so before the icon
     // candidate everything collected for it was positional.
     const orderSearch = `
-      <style>.al-icon-search::before { content: "\\e9a1"; }</style>
+      <style>.app-icon-search::before { content: "\\e9a1"; }</style>
       <header><button type="button" class="aa-DetachedSearchButton" title="Search"><svg class="aa-SubmitIcon"></svg></button></header>
       <form><div class="form-group al-search-custom">
         <input type="text" data-testid="orders-reference-input" placeholder="Recherchez votre commande par référence">
-        <button type="button" class="btn-reset"><i class="al-icon-close"></i></button>
-        <button class="btn btn-primary has-icon"><i class="al-icon-search"></i></button>
+        <button type="button" class="btn-reset"><i class="app-icon-close"></i></button>
+        <button class="btn btn-primary has-icon"><i class="app-icon-search"></i></button>
       </div>
       <button type="button" disabled data-testid="orders-apply-filters-button">Appliquer les filtres</button></form>
-      <div class="modal" hidden><button type="button" class="btn btn-primary has-icon"><i class="al-icon-cart"></i></button></div>`;
+      <div class="modal" hidden><button type="button" class="btn btn-primary has-icon"><i class="app-icon-cart"></i></button></div>`;
 
     it('names an icon-only control by its icon', async ({ page }) => {
       await page.setContent(orderSearch);
       const { ranked } = await collect(page, '.has-icon >> nth=0');
-      expect(ranked[0]).toEqual({ selector: 'internal:role=button >> internal:has=".al-icon-search"', score: 1620 });
+      expect(ranked[0]).toEqual({ selector: 'internal:role=button >> internal:has=".app-icon-search"', score: 1620 });
       await assertAllResolve(page, '.has-icon >> nth=0', ranked.map(entry => entry.selector));
     });
 
     it('adds no icon candidate where another locator decides', async ({ page }) => {
-      await page.setContent(orderSearch + `<button><i class="al-icon-cart"></i> Commander</button>`);
+      await page.setContent(orderSearch + `<button><i class="app-icon-cart"></i> Commander</button>`);
       const reset = await collect(page, '.btn-reset');
       expect(reset.ranked.map(entry => entry.selector)).toContain('.btn-reset');
       const named = await collect(page, 'text=Commander');
@@ -1123,7 +1123,7 @@ it.describe('selector generator', () => {
       `<div class="line line-${i}${suffix}"><div class="cell cell-${i}${suffix}"><span class="price price-${i}${suffix}"></span></div></div>`).join('');
 
     it('runs no icon query where another locator decides', async ({ page }) => {
-      // The ALFR products tab: a nameless container hovered at replay, decided by its own class.
+      // A production products tab: a nameless container hovered at replay, decided by its own class.
       await page.setContent(`<div class="tab-content">${rows(20, '')}</div>`);
       const iconQueries = await countIconQueries(page);
       const { ranked } = await collect(page, '.tab-content');

@@ -314,10 +314,10 @@
 - **A nameless control is named by its icon** (`addIconCandidates` in `selectorCollector.ts`, one
   hook in `selectorGenerator.ts`; since 2026-10-06). A control with no
   accessible name (or a name of icon-font glyphs only), no text, and own classes shared with other
-  elements, such as a magnifier button `<button class="btn btn-primary"><i class="al-icon-search"></i></button>`,
+  elements, such as a magnifier button `<button class="btn btn-primary"><i class="app-icon-search"></i></button>`,
   got only positional locators (`internal:role=button >> nth=5`, `button:nth-child(3)`). A step
   carrying nothing else decides on its first one, so a button added earlier in the page moved it
-  onto another button: found on Air Liquide's order search, which clicked the disabled "Appliquer
+  onto another button: found on a production order search, which clicked the disabled "Appliquer
   les filtres" instead. Collection now reads the classes of the control's descendants, three
   levels deep, shallowest first, through the same filters as its other class readers (generated
   names, gesture classes), and keeps up to two unique `internal:role=<role> >> internal:has=".<class>"`
@@ -328,7 +328,7 @@
   element of the control's role or tag on the page's main thread. Since 2026-10-21, both checks
   happen before the first query. Before that, the gate was applied in `build`, after every query
   had run, and a replayed hover on a nameless table container blocked a production page for 58
-  minutes. A shared icon (`.al-icon-close` on three buttons) yields nothing. Collect-only
+  minutes. A shared icon (`.app-icon-close` on three buttons) yields nothing. Collect-only
   like every collected candidate: the primary selector is unchanged. Full design: zazu's
   `docs/specs/icon-only-control-recording.md`. Guarded by the six icon tests in the `collected
   selectors` block of `tests/library/selector-generator.spec.ts` (plus two that count the
@@ -458,7 +458,7 @@
   `injectedScript.ts`, `setupHitTargetInterceptor` and `watchSubtree`; since 2026-11-03).
   Upstream's hit-target interceptor judges a click by the first pointer event it sees, and when
   it sees none it reports the click as done. Some pages rewrite the element under a freshly
-  arrived pointer (volcom.fr's product cards uncomment a hidden slide on `mouseenter` by
+  arrived pointer (a store's product cards uncomment a hidden slide on `mouseenter` by
   rewriting their `innerHTML`, and each rewrite is a new arrival, so it chains). The browser
   then holds a detached node as the one under the mouse, the press goes there, and nothing
   reaches the document: upstream's click "succeeds" and the page never moves. Same in upstream
@@ -483,6 +483,20 @@
   Guarded by `tests/page/click-undelivered.spec.ts` (the fixture losing a press made on arrival,
   in Chromium; the rewritten card clicked exactly once; an ordinary link; a link that
   navigates at once; the failure with its reason; non-plain, trial and force clicks unchanged).
+
+- **`check` and `uncheck` wait for the state the page sets after the click** (`server/dom.ts`,
+  `_setChecked`; since 2026-11-06). Upstream reads the checked state once, right after the click,
+  and throws `Clicking the checkbox did not change its state` if it has not moved yet. A
+  framework that owns the checkbox cancels the native toggle and sets `checked` from its model a
+  moment later (PrimeNG's multiselect options in Angular: in a production test, the option was
+  selected and the box checked about 40 ms after the throw). So the state is read again every
+  50 ms, for up to 1 s, inside the action's own timeout. The click is never repeated, since a
+  second click would toggle the box back. A box that never changes still throws the same error,
+  1 s later. Full design: zazu's `docs/specs/checkbox-settled-state.md`.
+
+  Guarded by `tests/page/page-check.spec.ts` (a box whose page sets its state 100 ms after the
+  click, checked and unchecked with one click each; a box that never changes still throws, after
+  one click).
 
 - **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
   `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,

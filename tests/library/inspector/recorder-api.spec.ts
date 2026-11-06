@@ -1174,7 +1174,7 @@ async function recordClickSelectors(context, html: string, click: (page: Page) =
 }
 
 test('leaves out a class the page adds to the clicked element on mousedown', async ({ context }) => {
-  // The roche-bobois shape: two buttons share their classes at rest, so the press class is
+  // A production shape: two buttons share their classes at rest, so the press class is
   // what made a class combination unique to the pressed one.
   const [selectors] = await recordClickSelectors(context, `
     <div class="pos-s"><button class="btn-full add-to-cart" aria-label="Ajouter au panier">Ajouter au panier</button></div>
