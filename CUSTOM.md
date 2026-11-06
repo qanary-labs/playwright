@@ -506,6 +506,16 @@
   - a box that never changes, and one that comes back from its busy period unchanged: both
     still throw, after one click.
 
+- **No click position when the press was outside the recorded element** (`recorder.ts`,
+  `_clickRatio`; since 2026-11-06). `positionRatio` is where on the recorded element the click
+  landed, as a fraction of its padding box. A page can move the element between the press and
+  the click: a field losing focus on the press re-renders the form. The recorder then measures
+  a box that no longer holds the press point. It used to clamp each axis to [0, 1], so the
+  replayed click aimed at the element's edge, where another element took it. It now records no
+  ratio, as for a keyboard click, and replay clicks the center. Full design: zazu's
+  `docs/specs/click-position-edge.md`. Guarded by the moved-element test in
+  `tests/library/inspector/recorder-api.spec.ts`.
+
 - **The aria snapshot masks the value of masked fields** (`packages/injected/src/ariaSnapshot.ts`,
   `isMaskedField`; since 2026-10-19). Upstream writes every input's value into the snapshot,
   passwords included: `textbox "Password": S3cr3t!`. zazu sends the snapshot to the model beside

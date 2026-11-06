@@ -190,6 +190,25 @@ test('does not record a click position for an Enter-key implicit form submission
   expect((submitClick!.action as any).positionRatio).toBeUndefined();
 });
 
+test('does not record a click position when the element moved away from the press before the click', async ({ context }) => {
+  // The page moves the element between the press and the click (here on mouseup, as a
+  // re-render triggered by a field losing focus does): when the recorder measures the
+  // element, the press point is outside it. A clamped ratio would put the replayed click
+  // on the element's edge, where another element takes it. No ratio must be recorded,
+  // so replay falls back to the center click.
+  const log = await startRecording(context);
+  const page = await context.newPage();
+  await page.setContent(`
+    <div id="line" style="margin-top: 60px; width: 300px; height: 20px" onmouseup="this.style.marginTop = '0px'">Line</div>`);
+  const box = (await page.locator('#line').boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+  await expect.poll(() => log.action('click').length).toBe(1);
+  const click = log.action('click')[0].action as any;
+  expect(click.selector).toBe('internal:text="Line"i');
+  expect(click.positionRatio).toBeUndefined();
+});
+
 // Document-space center of the recorded element (zazu's self-healing spec): viewport
 // rect center plus the frame's scroll offset, on the retargeted element, for every
 // locator-bearing action — not only clicks. Replay hit-tests it to tell apart elements

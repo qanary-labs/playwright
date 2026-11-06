@@ -1232,10 +1232,13 @@ class JsonRecordActionTool implements RecorderTool {
       return undefined;
     const x = (event.clientX - rect.left - borderLeft) / width;
     const y = (event.clientY - rect.top - borderTop) / height;
-    return {
-      x: Math.min(1, Math.max(0, x)),
-      y: Math.min(1, Math.max(0, y)),
-    };
+    // A press outside the element's box: the page moved the element between the press and
+    // the click (a re-render after a field lost focus). Clamping would put the replayed
+    // click on the element's edge, where another element takes it, so no ratio is recorded
+    // and replay falls back to the center click.
+    if (x < 0 || x > 1 || y < 0 || y > 1)
+      return undefined;
+    return { x, y };
   }
 
   private _formDataForTarget(target: HTMLElement): { submitter: boolean, formId: string, isInForm: boolean };
