@@ -1562,7 +1562,9 @@ test('marks a repeat distinct when no other copy\'s target has the target\'s nam
     <nav><ul>${['Home', 'Products', 'About'].map(name => `<li><a href="#">${name}</a></li>`).join('')}</ul></nav>
     <ul id="results">${cards(4, i => `<li><a href="#">Result ${i}</a></li>`)}</ul>
     <ul id="icons">${cards(3, () => `<li><button><svg width="10" height="10"></svg></button></li>`)}</ul>
-    <ul id="mixed"><li><button>Buy</button></li><li><button>Sell</button></li><li><button>  buy </button></li></ul>`);
+    <ul id="mixed"><li><button>Buy</button></li><li><button>Sell</button></li><li><button>  buy </button></li></ul>
+    <div id="notes"><div><p>Accepted names are listed here</p></div><div><p>The password is the same for all</p></div></div>
+    <div id="same"><div><p>Out of stock</p></div><div><p>Out of stock</p></div></div>`);
 
   // A menu and a list of results: copies by their structure, named differently.
   await page.getByRole('link', { name: 'Products' }).click();
@@ -1575,6 +1577,12 @@ test('marks a repeat distinct when no other copy\'s target has the target\'s nam
   expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3 });
   await page.locator('#mixed button').first().click();
   expect((await payload('click')).fingerprint.repeat).toEqual({ index: 0, count: 3 });
+
+  // Blocks of text have no accessible name: they are told apart by what they say.
+  await page.locator('#notes p').nth(1).click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 2, distinct: true });
+  await page.locator('#same p').first().click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 0, count: 2 });
   await recordedContext.close();
 });
 

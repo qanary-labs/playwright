@@ -75,8 +75,9 @@ export function elementFingerprint(element: Element, repetition: Repetition | un
   return fingerprint;
 }
 
-// Whether no other copy's target has the target's accessible name: a menu's entries are
-// copies by their structure and different things by their name. Two empty names are equal: a row of icon buttons is one control repeated.
+// Whether no other copy's target is called as the target is: a menu's entries are copies
+// by their structure and different things by their name. Two targets with neither a name
+// nor a text are equal: a row of icon buttons is one control repeated.
 function isDistinct(target: Element, repetition: Repetition): boolean {
   const name = comparableName(target);
   let named = 0;
@@ -92,8 +93,10 @@ function isDistinct(target: Element, repetition: Repetition): boolean {
   return true;
 }
 
+// What a copy's target is called: its accessible name, else its own text — two blocks of
+// text have no name and are told apart by what they say.
 function comparableName(element: Element): string {
-  return normalizeWhiteSpace(getElementAccessibleName(element, false)).toLowerCase();
+  return (normalizeWhiteSpace(getElementAccessibleName(element, false)) || ownText(element)).toLowerCase();
 }
 
 // The first element at the path's end inside a copy.

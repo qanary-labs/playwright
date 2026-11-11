@@ -20842,8 +20842,8 @@ export interface RecorderActionPayload {
       count: number;
 
       /**
-       * `true` when no other copy's element has this element's accessible name (a menu's entries, a list of differently
-       * named links). Absent otherwise.
+       * `true` when no other copy's element is called as this element is — by its accessible name, else by its own text (a
+       * menu's entries, a list of differently named links, two blocks of different text). Absent otherwise.
        */
       distinct?: boolean;
     };

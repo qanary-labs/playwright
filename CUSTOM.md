@@ -146,8 +146,9 @@
   { index, count }` when it is one of several structural copies: the first ancestor whose parent
   holds other children of its tag and role in which the path down to the element (tag and role per
   hop, open shadow roots crossed) also matches — at most 15 hops and 2000 node visits. `repeat.distinct`
-  is `true` when none of the other copies' targets (the first 50) has the element's accessible name,
-  compared without case or spacing, two empty names being equal: a menu's entries, a list of
+  is `true` when none of the other copies' targets (the first 50) is called as the element is — its
+  accessible name, else its own text — compared without case or spacing, two targets with neither
+  being equal: a menu's entries, a list of
   differently named links. On a repeated
   element, the collection: `items`, selectors matching every copy and nothing outside their parent
   (role, a shared stable attribute, a shared non-generated class, scoped by the parent's best
