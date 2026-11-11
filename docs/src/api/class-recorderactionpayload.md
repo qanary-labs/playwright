@@ -135,6 +135,7 @@ Where the recorded element is on the whole page: the center of its bounding box 
   - `repeat` ?<[Object]> Present when the element is one of several structural copies.
     - `index` <[int]> Which copy, from 0, in document order.
     - `count` <[int]> How many copies.
+    - `distinct` ?<[boolean]> `true` when no other copy's element has this element's accessible name (a menu's entries, a list of differently named links). Absent otherwise.
 
 What the recorded element is, in human terms, read on the same element and in the same tick as [`property: RecorderActionPayload.point`]. `repeat` is found by walking up from the element to the first ancestor whose parent holds other children of its tag and role in which the path down to the element (tag and role of each hop) also matches: a card in a list of cards, a row in a table. Present on every action that carries selectors.
 

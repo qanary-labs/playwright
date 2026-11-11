@@ -37,6 +37,8 @@ const kContextRoles = new Set(['banner', 'complementary', 'contentinfo', 'form',
 // may visit in all before it gives up (a wide tree of identical wrappers).
 const kMaxRepeatHops = 15;
 const kMaxRepeatVisits = 2000;
+// How many other copies' targets are named before the target's name is held to be its own.
+const kMaxNamedCopies = 50;
 
 // One step of the path from the repeated item down to the target: the element's tag and
 // role, and whether it sits in the shadow root of the element above it.
@@ -65,9 +67,49 @@ export function elementFingerprint(element: Element, repetition: Repetition | un
   const label = controlLabel(element);
   if (label)
     fingerprint.label = label;
-  if (repetition)
+  if (repetition) {
     fingerprint.repeat = { index: repetition.copies.indexOf(repetition.item), count: repetition.copies.length };
+    if (isDistinct(element, repetition))
+      fingerprint.repeat.distinct = true;
+  }
   return fingerprint;
+}
+
+// Whether no other copy's target has the target's accessible name: a menu's entries are
+// copies by their structure and different things by their name (zazu's step-intent spec,
+// §Repetition). Two empty names are equal: a row of icon buttons is one control repeated.
+function isDistinct(target: Element, repetition: Repetition): boolean {
+  const name = comparableName(target);
+  let named = 0;
+  for (const copy of repetition.copies) {
+    if (copy === repetition.item)
+      continue;
+    if (++named > kMaxNamedCopies)
+      break;
+    const other = targetIn(copy, repetition.path, 0);
+    if (other && comparableName(other) === name)
+      return false;
+  }
+  return true;
+}
+
+function comparableName(element: Element): string {
+  return normalizeWhiteSpace(getElementAccessibleName(element, false)).toLowerCase();
+}
+
+// The first element at the path's end inside a copy.
+function targetIn(element: Element, path: Hop[], from: number): Element | undefined {
+  if (from === path.length)
+    return element;
+  const hop = path[from];
+  const children = hop.shadow ? element.shadowRoot?.children : element.children;
+  for (const child of children ?? []) {
+    if (child.localName !== hop.tag || getAriaRole(child) !== hop.role)
+      continue;
+    const found = targetIn(child, path, from + 1);
+    if (found)
+      return found;
+  }
 }
 
 // The first ancestor A whose parent holds another child of A's tag and role in which the

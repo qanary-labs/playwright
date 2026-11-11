@@ -20840,6 +20840,12 @@ export interface RecorderActionPayload {
        * How many copies.
        */
       count: number;
+
+      /**
+       * `true` when no other copy's element has this element's accessible name (a menu's entries, a list of differently
+       * named links). Absent otherwise.
+       */
+      distinct?: boolean;
     };
   };
 

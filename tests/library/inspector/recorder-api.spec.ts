@@ -1556,6 +1556,28 @@ test('records the repeat of a target inside a card list', async ({ context }) =>
   await recordedContext.close();
 });
 
+test('marks a repeat distinct when no other copy\'s target has the target\'s name', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  await page.setContent(`
+    <nav><ul>${['Home', 'Products', 'About'].map(name => `<li><a href="#">${name}</a></li>`).join('')}</ul></nav>
+    <ul id="results">${cards(4, i => `<li><a href="#">Result ${i}</a></li>`)}</ul>
+    <ul id="icons">${cards(3, () => `<li><button><svg width="10" height="10"></svg></button></li>`)}</ul>
+    <ul id="mixed"><li><button>Buy</button></li><li><button>Sell</button></li><li><button>  buy </button></li></ul>`);
+
+  // A menu and a list of results: copies by their structure, named differently.
+  await page.getByRole('link', { name: 'Products' }).click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3, distinct: true });
+  await page.getByRole('link', { name: 'Result 2' }).click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 2, count: 4, distinct: true });
+
+  // Nameless icons are the same control; so is a name another copy shares, whatever its case and spacing.
+  await page.locator('#icons button').nth(1).click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  await page.locator('#mixed button').first().click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 0, count: 3 });
+  await recordedContext.close();
+});
+
 test('records the repeat of a cell\'s control in a table row', async ({ context }) => {
   const { recordedContext, page, payload } = await recordPayloads(context);
   await page.setContent(`<table><thead><tr><th>Name</th><th></th></tr></thead><tbody>${cards(4, i => `<tr><td>Row ${i}</td><td><button>Edit</button></td></tr>`)}</tbody></table>`);
@@ -1672,7 +1694,7 @@ test('records no collection when validation empties a list', async ({ context })
   await page.getByRole('button', { name: 'Y0' }).click();
 
   const { fingerprint, collection } = await payload('click');
-  expect(fingerprint.repeat).toEqual({ index: 0, count: 3 });
+  expect(fingerprint.repeat).toEqual({ index: 0, count: 3, distinct: true });
   expect(collection).toBeUndefined();
   await recordedContext.close();
 });
