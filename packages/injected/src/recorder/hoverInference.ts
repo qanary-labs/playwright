@@ -61,8 +61,7 @@ type Candidate = {
   // Document-space center of the element the selectors name, captured with them
   // (zazu's self-healing spec): a reveal can shift layout before confirmation.
   point?: Point;
-  // What the element is, and its collection when it is repeated (zazu's step-intent and
-  // collection-locators specs), captured with the selectors for the same reason.
+  // What the element is, and its collection when it is repeated, captured with the selectors for the same reason.
   fingerprint?: actions.Fingerprint;
   collection?: actions.Collection;
   // Roots of content that became visible while the pointer was over `element`.

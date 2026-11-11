@@ -279,8 +279,7 @@ export class InjectedScript {
   }
 
   // Qanary fork: what the element is and, when it is one of several copies, the selectors
-  // naming the copies and the element inside one (zazu's step-intent and
-  // collection-locators specs). `generate` is the caller's selector generation, so the
+  // naming the copies and the element inside one. `generate` is the caller's selector generation, so the
   // collection is ranked as its own selectors are.
   describeElement(element: Element, generate: GenerateRanked): { fingerprint: Fingerprint, collection?: Collection } {
     beginAriaCaches();

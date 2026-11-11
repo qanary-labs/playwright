@@ -17,7 +17,7 @@
 /**
  * Qanary fork: locators that name the collection a repeated target belongs to — the set of
  * copies, and the target inside one copy — beside the step's own locators, which name the
- * copy the user acted on (zazu's collection-locators spec). Built from the repetition the
+ * copy the user acted on. Built from the repetition the
  * fingerprint found, validated against every copy, never against one.
  */
 

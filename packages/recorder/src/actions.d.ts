@@ -64,10 +64,10 @@ export type ActionWithSelector = ActionBase & {
   // See zazu's docs/specs/self-healing.md.
   point?: Point,
   // What the recorded element is, in human terms, and whether it is one of several
-  // copies. Read with `point`, on the same element. See zazu's docs/specs/step-intent.md.
+  // copies. Read with `point`, on the same element.
   fingerprint?: Fingerprint,
   // On a repeated element: selectors for the set of copies and for the element inside
-  // one copy. See zazu's docs/specs/collection-locators.md.
+  // one copy.
   collection?: Collection,
 };
 

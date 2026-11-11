@@ -1820,9 +1820,9 @@ export class Recorder {
   }
 
   // What the recorder says about the element an action names, beyond its selectors, read in
-  // the same tick: where it is (point, zazu's self-healing spec), what it is and whether it
-  // is one of several copies (fingerprint, step-intent spec), and, when it is, how to name
-  // the copies (collection, collection-locators spec). The last two need the scored
+  // the same tick: where it is (point), what it is and whether it
+  // is one of several copies (fingerprint), and, when it is, how to name
+  // the copies (collection). The last two need the scored
   // selectors, so only a recorder collecting them reads them.
   elementFacts(element: Element | undefined): Pick<actions.ActionWithSelector, 'point' | 'fingerprint' | 'collection'> {
     const point = elementPoint(element);

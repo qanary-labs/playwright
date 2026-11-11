@@ -156,8 +156,8 @@
   every copy (the child chain from the copy as the floor); absent when either list validates
   empty. Forwarded by `_simplifyRecordedAction`, documented on `RecorderActionPayload`; the same
   reads on demand through `Locator.generateSelectors({ fingerprint, collection })` (protocol field,
-  `server/frames.ts`) for relocate. Full design: zazu's `docs/specs/step-intent.md` and
-  `docs/specs/collection-locators.md`. Guarded by the fingerprint, repeat and collection tests in
+  `server/frames.ts`) for a consumer re-reading an
+  element it already resolved. Guarded by the fingerprint, repeat and collection tests in
   `tests/library/inspector/recorder-api.spec.ts` and one in `hover-inference.spec.ts`.
 
 - **A click on a `<label>` records once** (`packages/injected/src/recorder/recorder.ts`,

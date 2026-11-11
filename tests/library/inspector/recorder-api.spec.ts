@@ -1482,7 +1482,7 @@ test('waitForRecordedActions resolves while a frame is navigating', async ({ con
   await navigation;
 });
 
-// zazu's step-intent spec (§The fingerprint) and collection-locators spec: what the recorded
+// The fingerprint and the collection: what the recorded
 // element is, whether it is one of several copies, and how to name the copies.
 async function recordPayloads(context) {
   const recordedContext = await context.browser().newContext({ recordSelectors: true });

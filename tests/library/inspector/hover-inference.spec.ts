@@ -687,7 +687,7 @@ test('should surface the inferred flag on the recorderaction payload', async ({ 
 });
 
 test('should carry the fingerprint of the hovered element on an inferred hover', async ({ context }) => {
-  // zazu's step-intent spec: the fingerprint is captured with the candidate's selectors and
+  // The fingerprint is captured with the candidate's selectors and
   // point, on the hovered element, not on the revealed content the click lands in.
   const recordedContext = await context.browser().newContext({ recordSelectors: true });
   const events: any[] = [];

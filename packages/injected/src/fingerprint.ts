@@ -15,8 +15,8 @@
  */
 
 /**
- * Qanary fork: what the recorded element is, in human terms (zazu's step-intent spec,
- * §The fingerprint), and whether it is one of several structural copies (§Repetition).
+ * Qanary fork: what the recorded element is, in human terms (the fingerprint), and
+ * whether it is one of several structural copies (the repetition).
  * Read in the same tick as the element's selectors and point, on the same element.
  */
 
@@ -76,8 +76,7 @@ export function elementFingerprint(element: Element, repetition: Repetition | un
 }
 
 // Whether no other copy's target has the target's accessible name: a menu's entries are
-// copies by their structure and different things by their name (zazu's step-intent spec,
-// §Repetition). Two empty names are equal: a row of icon buttons is one control repeated.
+// copies by their structure and different things by their name. Two empty names are equal: a row of icon buttons is one control repeated.
 function isDistinct(target: Element, repetition: Repetition): boolean {
   const name = comparableName(target);
   let named = 0;

@@ -1820,7 +1820,7 @@ export class Frame extends SdkObject<FrameEventMap> {
   // fallback chain), and generation runs on the element `selector` strictly resolves to,
   // so ranking and interactive-ancestor promotion match a fresh recording by construction.
   // The fingerprint and the collection, on request, are read on the element the selectors
-  // name, as the recorder reads them (zazu's step-intent and collection-locators specs).
+  // name, as the recorder reads them.
   async generateSelectors(progress: Progress, selector: string, maxSelectors?: number, describe: { fingerprint?: boolean, collection?: boolean } = {}): Promise<{ selectors: { selector: string, score: number }[], frameSelectors: { selector: string, score: number }[][], fingerprint?: any, collection?: any }> {
     return await this._retryWithProgressIfNotConnected(progress, selector, { strict: true, performActionPreChecks: true }, async (progress, handle) => {
       const testIdAttributeName = this._page.browserContext.selectors().testIdAttributeName() || 'data-testid';
