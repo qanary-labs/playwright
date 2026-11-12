@@ -149,7 +149,9 @@
   is `true` when none of the other copies' targets (the first 50) is called as the element is — its
   accessible name, else its own text — compared without case or spacing, two targets with neither
   being equal: a menu's entries, a list of
-  differently named links. On a repeated
+  differently named links. `repeat.text` is the copy's first visible text that up to 5 copies
+  beside it do not show (a card's title, a row's first cell), absent when it shows nothing of its
+  own. On a repeated
   element, the collection: `items`, selectors matching every copy and nothing outside their parent
   (role, a shared stable attribute, a shared non-generated class, scoped by the parent's best
   non-text selector when needed, `:scope > tag` as the floor), and `target`, the element's

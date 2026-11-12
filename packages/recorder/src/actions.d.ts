@@ -84,7 +84,8 @@ export type Fingerprint = {
   // Up to 3: the nearest meaningful ancestors, innermost first, then the nearest heading.
   context: FingerprintContext[],
   // Present when the element is one of `count` structural copies, the `index`th from 0.
-  repeat?: { index: number, count: number, distinct?: boolean },
+  // `text`: what this copy shows that the copies beside it do not (a card's title).
+  repeat?: { index: number, count: number, distinct?: boolean, text?: string },
 };
 
 export type Collection = {

@@ -1551,8 +1551,30 @@ test('records the repeat of a target inside a card list', async ({ context }) =>
   await page.locator('.card').nth(2).getByRole('button').click();
 
   const fingerprint = (await payload('click')).fingerprint;
-  expect(fingerprint.repeat).toEqual({ index: 2, count: 12 });
+  expect(fingerprint.repeat).toEqual({ index: 2, count: 12, text: 'Product 2' });
   expect(fingerprint.context).toEqual([{ role: 'heading', name: 'Product 2' }]);
+  await recordedContext.close();
+});
+
+test('records what the copy shows that the copies beside it do not', async ({ context }) => {
+  const { recordedContext, page, payload } = await recordPayloads(context);
+  // No heading: the title is a plain block, after a badge every card shows and a hidden one.
+  await page.setContent(`
+    <div class="grid">${cards(4, i => `<div class="card"><span>New</span><span style="display:none">Hidden ${i}</span>
+      <div class="title">  Shirt   ${i} </div><div class="price">$${i}.99</div><button>Add to cart</button></div>`)}</div>
+    <div class="same">${cards(3, () => `<div class="card"><p>Out of stock</p><button>Notify me</button></div>`)}</div>
+    <div class="fields">${cards(2, i => `<div class="row"><p>Line ${i}</p><input value="typed ${i}" aria-label="Quantity"></div>`)}</div>`);
+
+  await page.locator('.grid .card').nth(1).getByRole('button').click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 4, text: 'Shirt 1' });
+
+  // Copies that show the same texts have nothing of their own.
+  await page.locator('.same .card').nth(1).getByRole('button').click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3 });
+
+  // Never a field's value.
+  await page.locator('.fields input').nth(1).click();
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 2, text: 'Line 1' });
   await recordedContext.close();
 });
 
@@ -1568,9 +1590,9 @@ test('marks a repeat distinct when no other copy\'s target has the target\'s nam
 
   // A menu and a list of results: copies by their structure, named differently.
   await page.getByRole('link', { name: 'Products' }).click();
-  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3, distinct: true });
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 3, distinct: true, text: 'Products' });
   await page.getByRole('link', { name: 'Result 2' }).click();
-  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 2, count: 4, distinct: true });
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 2, count: 4, distinct: true, text: 'Result 2' });
 
   // Nameless icons are the same control; so is a name another copy shares, whatever its case and spacing.
   await page.locator('#icons button').nth(1).click();
@@ -1580,7 +1602,7 @@ test('marks a repeat distinct when no other copy\'s target has the target\'s nam
 
   // Blocks of text have no accessible name: they are told apart by what they say.
   await page.locator('#notes p').nth(1).click();
-  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 2, distinct: true });
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 1, count: 2, distinct: true, text: 'The password is the same for all' });
   await page.locator('#same p').first().click();
   expect((await payload('click')).fingerprint.repeat).toEqual({ index: 0, count: 2 });
   await recordedContext.close();
@@ -1591,7 +1613,7 @@ test('records the repeat of a cell\'s control in a table row', async ({ context 
   await page.setContent(`<table><thead><tr><th>Name</th><th></th></tr></thead><tbody>${cards(4, i => `<tr><td>Row ${i}</td><td><button>Edit</button></td></tr>`)}</tbody></table>`);
   await page.getByRole('row', { name: 'Row 3' }).getByRole('button').click();
 
-  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 3, count: 4 });
+  expect((await payload('click')).fingerprint.repeat).toEqual({ index: 3, count: 4, text: 'Row 3' });
   await recordedContext.close();
 });
 
@@ -1651,7 +1673,7 @@ test('records the collection of table rows by role, without the header row', asy
   await page.getByRole('row', { name: 'Row 1' }).getByRole('button').click();
 
   const { fingerprint, collection } = await payload('click');
-  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3, text: 'Row 1' });
   const byRole = collection.items.find(i => i.selector.includes('internal:role=row'));
   expect(byRole).toBeTruthy();
   // The header row is a row too, but holds no button: the consumer keeps only the copies
@@ -1683,7 +1705,7 @@ test('keeps the collection valid with an ad card among the copies', async ({ con
   await page.getByRole('button').nth(1).click();
 
   const { fingerprint, collection } = await payload('click');
-  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3, text: 'Two' });
   for (const { selector } of collection.target) {
     for (const name of ['One', 'Two', 'Three'])
       await expect(page.locator('.card', { hasText: name }).locator(selector), selector).toHaveCount(1);
@@ -1702,7 +1724,7 @@ test('records no collection when validation empties a list', async ({ context })
   await page.getByRole('button', { name: 'Y0' }).click();
 
   const { fingerprint, collection } = await payload('click');
-  expect(fingerprint.repeat).toEqual({ index: 0, count: 3, distinct: true });
+  expect(fingerprint.repeat).toEqual({ index: 0, count: 3, distinct: true, text: 'X0' });
   expect(collection).toBeUndefined();
   await recordedContext.close();
 });
@@ -1716,7 +1738,7 @@ test('records the collection inside an iframe', async ({ context }) => {
 
   const { fingerprint, collection, frameSelectors } = await payload('click');
   expect(frameSelectors).toHaveLength(1);
-  expect(fingerprint.repeat).toEqual({ index: 2, count: 3 });
+  expect(fingerprint.repeat).toEqual({ index: 2, count: 3, text: 'Item 2' });
   for (const { selector } of collection.items)
     await expect(page.frameLocator('#shop').locator(selector), selector).toHaveCount(3);
   await recordedContext.close();
@@ -1731,7 +1753,7 @@ test('records the collection inside a shadow root', async ({ context }) => {
   await page.locator('li').nth(1).getByRole('button').click();
 
   const { fingerprint, collection } = await payload('click');
-  expect(fingerprint.repeat).toEqual({ index: 1, count: 3 });
+  expect(fingerprint.repeat).toEqual({ index: 1, count: 3, text: 'Item 1' });
   for (const { selector } of collection.items)
     await expect(page.locator(selector), selector).toHaveCount(3);
   for (const { selector } of collection.target)

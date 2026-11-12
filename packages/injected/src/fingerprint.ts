@@ -39,6 +39,9 @@ const kMaxRepeatHops = 15;
 const kMaxRepeatVisits = 2000;
 // How many other copies' targets are named before the target's name is held to be its own.
 const kMaxNamedCopies = 50;
+// The copy's own text: how many of its texts are read, and against how many other copies.
+const kMaxCopyTexts = 200;
+const kMaxComparedCopies = 5;
 
 // One step of the path from the repeated item down to the target: the element's tag and
 // role, and whether it sits in the shadow root of the element above it.
@@ -71,6 +74,9 @@ export function elementFingerprint(element: Element, repetition: Repetition | un
     fingerprint.repeat = { index: repetition.copies.indexOf(repetition.item), count: repetition.copies.length };
     if (isDistinct(element, repetition))
       fingerprint.repeat.distinct = true;
+    const text = copyText(repetition);
+    if (text)
+      fingerprint.repeat.text = text;
   }
   return fingerprint;
 }
@@ -95,6 +101,40 @@ function isDistinct(target: Element, repetition: Repetition): boolean {
 
 // What a copy's target is called: its accessible name, else its own text — two blocks of
 // text have no name and are told apart by what they say.
+// What tells the recorded copy from the others: its first visible text that the copies
+// beside it do not show — a card's title, a row's first cell — where the target's own text
+// ("Add to cart") is the same in every copy.
+function copyText(repetition: Repetition): string | undefined {
+  const shown = new Set<string>();
+  let compared = 0;
+  for (const copy of repetition.copies) {
+    if (copy === repetition.item)
+      continue;
+    if (++compared > kMaxComparedCopies)
+      break;
+    for (const text of visibleTexts(copy))
+      shown.add(text.toLowerCase());
+  }
+  for (const text of visibleTexts(repetition.item)) {
+    if (!shown.has(text.toLowerCase()))
+      return cap(text);
+  }
+}
+
+// The visible texts inside an element, in document order. Never a field's value.
+function visibleTexts(root: Element): string[] {
+  const texts: string[] = [];
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(), visited = 0; node && visited < kMaxCopyTexts; node = walker.nextNode(), visited++) {
+    const text = normalizeWhiteSpace(node.nodeValue ?? '');
+    const parent = node.parentElement;
+    if (!text || !parent || ['script', 'style', 'noscript', 'template'].includes(parent.localName) || !isElementVisible(parent))
+      continue;
+    texts.push(text);
+  }
+  return texts;
+}
+
 function comparableName(element: Element): string {
   return (normalizeWhiteSpace(getElementAccessibleName(element, false)) || ownText(element)).toLowerCase();
 }

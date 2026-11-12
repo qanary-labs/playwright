@@ -20846,6 +20846,12 @@ export interface RecorderActionPayload {
        * menu's entries, a list of differently named links, two blocks of different text). Absent otherwise.
        */
       distinct?: boolean;
+
+      /**
+       * The copy's first visible text that the copies beside it do not show — a card's title, a row's first cell — capped
+       * at 100 characters. Absent when the copy shows nothing of its own.
+       */
+      text?: string;
     };
   };
 
