@@ -20,8 +20,10 @@ import { parseAttributeSelector, parseSelector, stringifySelector, visitAllSelec
 import { cacheNormalizedWhitespaces, normalizeWhiteSpace, trimStringWithEllipsis } from '@isomorphic/stringUtils';
 
 import { generateAriaTree, getAllElementsMatchingExpectAriaTemplate, matchesExpectAriaTemplate, renderAriaTree, findNewElement } from './ariaSnapshot';
+import { elementCollection } from './collection';
 import { coveredTargetHref } from './coveredTarget';
 import { emptyLabelControl, emptyLabelHit } from './emptyLabel';
+import { elementFingerprint, findRepetition } from './fingerprint';
 import { beginDOMCaches, enclosingShadowRootOrDocument, endDOMCaches, isElementVisible, isInsideScope, parentElementOrShadowHost, setGlobalOptions } from './domUtils';
 import { Highlight } from './highlight';
 import { kLayoutSelectorNames, layoutSelectorScore } from './layoutSelectorUtils';
@@ -39,7 +41,9 @@ import type { CSSComplexSelectorList } from '@isomorphic/cssParser';
 import type { Language } from '@isomorphic/locatorGenerators';
 import type { NestedSelectorBody, ParsedSelector, ParsedSelectorPart } from '@isomorphic/selectorParser';
 import type * as channels from '@protocol/channels';
+import type { Collection, Fingerprint } from '@recorder/actions';
 import type { AriaSnapshot, AriaTreeOptions } from './ariaSnapshot';
+import type { GenerateRanked } from './collection';
 import type { LayoutSelectorName } from './layoutSelectorUtils';
 import type { SelectorEngine, SelectorRoot } from './selectorEngine';
 import type { GenerateSelectorOptions } from './selectorGenerator';
@@ -272,6 +276,21 @@ export class InjectedScript {
 
   generateSelector(targetElement: Element, options: GenerateSelectorOptions) {
     return generateSelector(this, targetElement, options);
+  }
+
+  // Qanary fork: what the element is and, when it is one of several copies, the selectors
+  // naming the copies and the element inside one. `generate` is the caller's selector generation, so the
+  // collection is ranked as its own selectors are.
+  describeElement(element: Element, generate: GenerateRanked): { fingerprint: Fingerprint, collection?: Collection } {
+    beginAriaCaches();
+    try {
+      const repetition = findRepetition(element);
+      const fingerprint = elementFingerprint(element, repetition);
+      const collection = repetition ? elementCollection(this, element, repetition, generate) : undefined;
+      return collection ? { fingerprint, collection } : { fingerprint };
+    } finally {
+      endAriaCaches();
+    }
   }
 
   generateSelectorSimple(targetElement: Element, options?: GenerateSelectorOptions): string {

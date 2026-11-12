@@ -10609,8 +10609,8 @@ export interface Browser {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
-     * selectors in your own tooling.
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point, fingerprint, collection }` describing the action
+     * so you can consume the selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
      */
@@ -14107,6 +14107,17 @@ export interface Locator {
    */
   generateSelectors(options?: {
     /**
+     * Whether to return the element's collection when it is one of several copies, as the recorder reads it at capture
+     * time.
+     */
+    collection?: boolean;
+
+    /**
+     * Whether to return the element's fingerprint, as the recorder reads it at capture time.
+     */
+    fingerprint?: boolean;
+
+    /**
      * How many selectors `selectors` may carry. Defaults to 10, matching what the recorder collects at capture time, so a
      * relocated step matches a freshly-recorded one.
      */
@@ -14143,6 +14154,18 @@ export interface Locator {
        */
       score: number;
     }>>;
+
+    /**
+     * With the `fingerprint` option: what the element is, shaped as
+     * [recorderActionPayload.fingerprint](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-fingerprint).
+     */
+    fingerprint?: Object;
+
+    /**
+     * With the `collection` option, when the element is one of several copies: shaped as
+     * [recorderActionPayload.collection](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-collection).
+     */
+    collection?: Object;
   }>;
 
   /**
@@ -16089,8 +16112,8 @@ export interface BrowserType<Unused = {}> {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
-     * selectors in your own tooling.
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point, fingerprint, collection }` describing the action
+     * so you can consume the selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
      */
@@ -20710,6 +20733,36 @@ export interface RecorderActionPayload {
   action: string;
 
   /**
+   * Present when
+   * [recorderActionPayload.fingerprint](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-fingerprint)
+   * has a `repeat` and both lists validated: selectors naming the set of copies and the element inside a copy, so a
+   * consumer can act on "the first copy" whichever copy that is, where
+   * [recorderActionPayload.selectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-selectors)
+   * name the copy the user acted on. In the element's frame:
+   * [recorderActionPayload.frameSelectors](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-frame-selectors)
+   * apply to both.
+   */
+  collection?: {
+    /**
+     * Selectors matching every copy and nothing outside their parent, strongest first, at most 5.
+     */
+    items: Array<{
+      selector: string;
+
+      score: number;
+    }>;
+
+    /**
+     * Selectors relative to one copy, each matching exactly one element in every copy, strongest first, at most 5.
+     */
+    target: Array<{
+      selector: string;
+
+      score: number;
+    }>;
+  };
+
+  /**
    * Identifier of the cookie/consent banner ancestor of the action target, when the target element (or any of its
    * ancestors, including across open shadow roots) carries the data attribute named in
    * `window.__pwCookieBannerAttribute`. The value is the attribute's value (typically a vendor name like `"onetrust"`
@@ -20730,6 +20783,77 @@ export interface RecorderActionPayload {
    * selected options, separated by `", "`.
    */
   displayValue: string;
+
+  /**
+   * What the recorded element is, in human terms, read on the same element and in the same tick as
+   * [recorderActionPayload.point](https://playwright.dev/docs/api/class-recorderactionpayload#recorder-action-payload-point).
+   * `repeat` is found by walking up from the element to the first ancestor whose parent holds other children of its tag
+   * and role in which the path down to the element (tag and role of each hop) also matches: a card in a list of cards,
+   * a row in a table. Present on every action that carries selectors.
+   */
+  fingerprint?: {
+    /**
+     * The element's ARIA role, empty when it has none.
+     */
+    role: string;
+
+    /**
+     * Its accessible name, capped at 100 characters.
+     */
+    name: string;
+
+    /**
+     * Its tag name.
+     */
+    tag: string;
+
+    /**
+     * Its visible text, capped at 100 characters. Never the value of a field.
+     */
+    text?: string;
+
+    /**
+     * For a field: its label, else its placeholder.
+     */
+    label?: string;
+
+    /**
+     * Up to 3 entries: the nearest landmark, region, form, dialog, list item, row, article or table ancestors, innermost
+     * first, then the nearest visible heading before the element.
+     */
+    context: Array<{
+      role: string;
+
+      name: string;
+    }>;
+
+    /**
+     * Present when the element is one of several structural copies.
+     */
+    repeat?: {
+      /**
+       * Which copy, from 0, in document order.
+       */
+      index: number;
+
+      /**
+       * How many copies.
+       */
+      count: number;
+
+      /**
+       * `true` when no other copy's element is called as this element is — by its accessible name, else by its own text (a
+       * menu's entries, a list of differently named links, two blocks of different text). Absent otherwise.
+       */
+      distinct?: boolean;
+
+      /**
+       * The copy's first visible text that the copies beside it do not show — a card's title, a row's first cell — capped
+       * at 100 characters. Absent when the copy shows nothing of its own.
+       */
+      text?: string;
+    };
+  };
 
   /**
    * The `id` of the closest form for the component targeted by locator, or an empty string when there is no form or the
@@ -23240,8 +23364,8 @@ export interface AndroidDevice {
     /**
      * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
      * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-     * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
-     * selectors in your own tooling.
+     * submitter, formId, isInForm, frameSelectors, positionRatio, point, fingerprint, collection }` describing the action
+     * so you can consume the selectors in your own tooling.
      *
      * Pass `true` for the defaults, or an object to set the collection budget.
      */
@@ -24440,8 +24564,8 @@ export interface BrowserContextOptions {
   /**
    * Enables the built-in recorder in programmatic mode without opening the inspector UI. Every user interaction is
    * captured and Playwright emits the `recorderaction` event with `{ action, selectors, role, text, value, sensitive,
-   * submitter, formId, isInForm, frameSelectors, positionRatio, point }` describing the action so you can consume the
-   * selectors in your own tooling.
+   * submitter, formId, isInForm, frameSelectors, positionRatio, point, fingerprint, collection }` describing the action
+   * so you can consume the selectors in your own tooling.
    *
    * Pass `true` for the defaults, or an object to set the collection budget.
    */

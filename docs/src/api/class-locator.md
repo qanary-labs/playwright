@@ -1386,6 +1386,8 @@ await locator.ClickAsync();
   - `frameSelectors` <[Array]<[Array]<[Object]>>> One scored candidate set per iframe of the element's frame chain, outermost first — same shape and score scale as `selectors`. Empty for elements in the main frame.
     - `selector` <[string]> Selector expression for that iframe element.
     - `score` <[float]> Playwright's engine score for it — **lower is stronger**.
+  - `fingerprint` ?<[Object]> With the `fingerprint` option: what the element is, shaped as [`property: RecorderActionPayload.fingerprint`].
+  - `collection` ?<[Object]> With the `collection` option, when the element is one of several copies: shaped as [`property: RecorderActionPayload.collection`].
 
 Generates fresh selector expressions for the element the locator resolves to, using the same
 engine and options the recorder runs at capture time. Rejects when the locator does not resolve
@@ -1419,6 +1421,19 @@ await page.Locator("#submit").GenerateSelectorsAsync();
 
 How many selectors `selectors` may carry. Defaults to 10, matching what the recorder
 collects at capture time, so a relocated step matches a freshly-recorded one.
+
+### option: Locator.generateSelectors.fingerprint
+* since: v1.60
+- `fingerprint` <[boolean]>
+
+Whether to return the element's fingerprint, as the recorder reads it at capture time.
+
+### option: Locator.generateSelectors.collection
+* since: v1.60
+- `collection` <[boolean]>
+
+Whether to return the element's collection when it is one of several copies, as the
+recorder reads it at capture time.
 
 ## async method: Locator.getAttribute
 * since: v1.14

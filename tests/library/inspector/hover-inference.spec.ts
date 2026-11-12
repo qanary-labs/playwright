@@ -686,6 +686,29 @@ test('should surface the inferred flag on the recorderaction payload', async ({ 
   await recordedContext.close();
 });
 
+test('should carry the fingerprint of the hovered element on an inferred hover', async ({ context }) => {
+  // The fingerprint is captured with the candidate's selectors and
+  // point, on the hovered element, not on the revealed content the click lands in.
+  const recordedContext = await context.browser().newContext({ recordSelectors: true });
+  const events: any[] = [];
+  recordedContext.on('recorderaction' as any, (payload: any) => events.push(payload));
+
+  const page = await recordedContext.newPage();
+  await page.setContent(`
+    <nav aria-label="Main">
+      <button id="products" onmouseenter="document.getElementById('menu').hidden = false">Products</button>
+      <ul id="menu" hidden><li><a href="#" id="pricing">Pricing</a></li></ul>
+    </nav>
+  `);
+  await page.getByRole('button', { name: 'Products' }).hover();
+  await page.waitForTimeout(SETTLE);
+  await page.getByRole('link', { name: 'Pricing' }).click();
+
+  await expect.poll(() => events.map(e => e.action)).toEqual(['hover', 'click']);
+  expect(events[0].fingerprint).toEqual({ role: 'button', name: 'Products', tag: 'button', text: 'Products', context: [{ role: 'navigation', name: 'Main' }] });
+  await recordedContext.close();
+});
+
 test('should detect a reveal inside an open shadow root', async ({ context }) => {
   // The document-level mutation observer cannot see into shadow trees; the
   // engine observes shadow roots discovered while seeding and along the

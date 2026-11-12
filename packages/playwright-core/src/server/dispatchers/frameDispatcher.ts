@@ -140,7 +140,7 @@ export class FrameDispatcher extends Dispatcher<Frame, channels.FrameChannel, Br
   }
 
   async generateSelectors(params: channels.FrameGenerateSelectorsParams, progress: Progress): Promise<channels.FrameGenerateSelectorsResult> {
-    return await this._frame.generateSelectors(progress, params.selector, params.maxSelectors);
+    return await this._frame.generateSelectors(progress, params.selector, params.maxSelectors, { fingerprint: params.fingerprint, collection: params.collection });
   }
 
   async click(params: channels.FrameClickParams, progress: Progress): Promise<void> {

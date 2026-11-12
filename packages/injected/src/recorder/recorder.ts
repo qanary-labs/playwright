@@ -933,7 +933,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-        point: elementPoint(retargeted),
+        ...this._recorder.elementFacts(retargeted),
       }, element);
       return;
     }
@@ -946,7 +946,7 @@ class JsonRecordActionTool implements RecorderTool {
       ariaSnapshot,
       position: positionForEvent(event),
       positionRatio: this._clickRatio(event, retargeted),
-      point: elementPoint(retargeted),
+      ...this._recorder.elementFacts(retargeted),
       signals: [],
       button: buttonForEvent(event),
       modifiers: modifiersForEvent(event),
@@ -996,7 +996,7 @@ class JsonRecordActionTool implements RecorderTool {
       ariaSnapshot,
       position: positionForEvent(event),
       positionRatio: this._clickRatio(event, retargeted),
-      point: elementPoint(retargeted),
+      ...this._recorder.elementFacts(retargeted),
       signals: [],
       button: 'right',
       modifiers: modifiersForEvent(event),
@@ -1012,7 +1012,7 @@ class JsonRecordActionTool implements RecorderTool {
     const element = this._recorder.deepEventTarget(event);
     const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
-    const point = elementPoint(retargeted);
+    const facts = this._recorder.elementFacts(retargeted);
     if (isRangeInput(element)) {
       this._recordConfirmedAction({
         name: 'fill',
@@ -1027,7 +1027,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-        point,
+        ...facts,
       }, element);
       return;
     }
@@ -1051,7 +1051,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-        point,
+        ...facts,
       }, element);
       return;
     }
@@ -1071,7 +1071,7 @@ class JsonRecordActionTool implements RecorderTool {
         formId: formId,
         isInForm: isInForm,
         cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-        point,
+        ...facts,
       }, element);
       return;
     }
@@ -1084,7 +1084,7 @@ class JsonRecordActionTool implements RecorderTool {
     const element = this._recorder.deepEventTarget(event);
     const { ariaSnapshot, selector, selectors, ref, retargeted } = this._ariaSnapshot(element);
     const { submitter, formId, isInForm } = this._formDataForTarget(element);
-    const point = elementPoint(retargeted);
+    const facts = this._recorder.elementFacts(retargeted);
 
     // Similarly to click, trigger checkbox on key event, not input.
     if (event.key === ' ') {
@@ -1101,7 +1101,7 @@ class JsonRecordActionTool implements RecorderTool {
           formId: formId,
           isInForm: isInForm,
           cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-          point,
+          ...facts,
         }, element);
         return;
       }
@@ -1120,7 +1120,7 @@ class JsonRecordActionTool implements RecorderTool {
       key: event.key,
       modifiers: modifiersForEvent(event),
       cookieBanner: detectCookieBanner(this._recorder.injectedScript, element),
-      point,
+      ...facts,
     }, element);
   }
 
@@ -1817,6 +1817,19 @@ export class Recorder {
       ...options,
     };
     return this.injectedScript.generateSelector(element, finalOptions);
+  }
+
+  // What the recorder says about the element an action names, beyond its selectors, read in
+  // the same tick: where it is (point), what it is and whether it
+  // is one of several copies (fingerprint), and, when it is, how to name
+  // the copies (collection). The last two need the scored
+  // selectors, so only a recorder collecting them reads them.
+  elementFacts(element: Element | undefined): Pick<actions.ActionWithSelector, 'point' | 'fingerprint' | 'collection'> {
+    const point = elementPoint(element);
+    if (!element || !this.collectSelectors())
+      return { point };
+    const described = this.injectedScript.describeElement(element, (target, root) => this.generateSelector(target, { root }).rankedSelectors);
+    return { point, ...described };
   }
 
   private _switchCurrentTool() {

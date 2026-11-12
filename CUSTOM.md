@@ -135,6 +135,34 @@
   design: zazu's `docs/specs/self-healing.md`. Guarded by the `point` tests in
   `tests/library/inspector/recorder-api.spec.ts` and one in `hover-inference.spec.ts`.
 
+- **`fingerprint` and `collection` on recorded actions** (`packages/injected/src/fingerprint.ts`
+  and `packages/injected/src/collection.ts`, new files, reached through
+  `InjectedScript.describeElement`). Read beside `point`, on the same retargeted element and in the
+  same tick, through `Recorder.elementFacts` (`recorder/recorder.ts`), which every capture site and
+  the inferred hover's candidate (`recorder/hoverInference.ts`) now call; only a recorder collecting
+  scored selectors (`recordSelectors`) reads them. The fingerprint is the element's role, accessible
+  name, tag, visible text (never a field's value), a field's label, up to 3 context entries
+  (meaningful ancestors innermost first, then the nearest visible heading before it) and `repeat
+  { index, count }` when it is one of several structural copies: the first ancestor whose parent
+  holds other children of its tag and role in which the path down to the element (tag and role per
+  hop, open shadow roots crossed) also matches — at most 15 hops and 2000 node visits. `repeat.distinct`
+  is `true` when none of the other copies' targets (the first 50) is called as the element is — its
+  accessible name, else its own text — compared without case or spacing, two targets with neither
+  being equal: a menu's entries, a list of
+  differently named links. `repeat.text` is the copy's first visible text that up to 5 copies
+  beside it do not show (a card's title, a row's first cell), absent when it shows nothing of its
+  own. On a repeated
+  element, the collection: `items`, selectors matching every copy and nothing outside their parent
+  (role, a shared stable attribute, a shared non-generated class, scoped by the parent's best
+  non-text selector when needed, `:scope > tag` as the floor), and `target`, the element's
+  selectors generated with the copy as root and kept only when each names exactly one element in
+  every copy (the child chain from the copy as the floor); absent when either list validates
+  empty. Forwarded by `_simplifyRecordedAction`, documented on `RecorderActionPayload`; the same
+  reads on demand through `Locator.generateSelectors({ fingerprint, collection })` (protocol field,
+  `server/frames.ts`) for a consumer re-reading an
+  element it already resolved. Guarded by the fingerprint, repeat and collection tests in
+  `tests/library/inspector/recorder-api.spec.ts` and one in `hover-inference.spec.ts`.
+
 - **A click on a `<label>` records once** (`packages/injected/src/recorder/recorder.ts`,
   `JsonRecordActionTool`). The browser follows a label click with a second click on the labelled
   control (the label's activation behavior): trusted, dispatched in the same task, and in

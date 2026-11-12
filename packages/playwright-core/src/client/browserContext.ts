@@ -251,6 +251,10 @@ export class BrowserContext extends ChannelOwner<channels.BrowserContextChannel>
       result.positionRatio = positionRatio;
     if (action.point)
       result.point = action.point;
+    if (action.fingerprint)
+      result.fingerprint = action.fingerprint;
+    if (action.collection)
+      result.collection = action.collection;
     if ((actionInContext.action as actions.HoverAction).inferred)
       result.inferred = true;
     if (actionInContext.frame.frameSelectors)

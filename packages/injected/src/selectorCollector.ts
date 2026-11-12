@@ -90,7 +90,7 @@ export function isGestureClass(restClasses: RestClasses | undefined, element: El
 const kMaxRandomSegmentLength = 12;
 // Attributes worth locating by that the engine never builds candidates from. `href`
 // is the useful one: a link's destination is independent evidence from its text.
-const kStableAttributes = ['href', 'name', 'type', 'role', 'alt', 'title'];
+export const kStableAttributes = ['href', 'name', 'type', 'role', 'alt', 'title'];
 
 type Family = 'testId' | 'role' | 'label' | 'attr' | 'text' | 'cssAttr' | 'cssId' | 'css' | 'structural' | 'nth';
 
@@ -488,11 +488,11 @@ function descendantsByDepth(element: Element, depth: number): Element[] {
 
 // Local copies of two selectorGenerator helpers: importing them would create a cycle
 // with the file that imports this module, and both are three lines.
-function escapeNodeName(node: Node): string {
+export function escapeNodeName(node: Node): string {
   return node.nodeName.toLocaleLowerCase().replace(/[:\.]/g, char => '\\' + char);
 }
 
-function escapeClassName(className: string): string {
+export function escapeClassName(className: string): string {
   return /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(className) ? className : '';
 }
 
@@ -507,7 +507,7 @@ function escapeClassName(className: string): string {
 // a name segment which is random rather than descriptive. Hand-written names stay:
 // `card__body`, `single_add_to_cart_button`, `col-md-6`, `text-2xl` and camelCase like
 // `ecomGalleryMainSlide` all read as words, and none of the rules below fire on words.
-function isGeneratedClassName(className: string): boolean {
+export function isGeneratedClassName(className: string): boolean {
   return className.split(/[-_]/).some(isRandomSegment);
 }
 
@@ -547,7 +547,7 @@ function isGeneratedId(id: string): boolean {
   return isGuidLike(id) || id.split(/[-_]+/).some(isCounterSegment);
 }
 
-function isGuidLike(value: string): boolean {
+export function isGuidLike(value: string): boolean {
   let lastCharacterType: 'lower' | 'upper' | 'digit' | 'other' | undefined;
   let transitionCount = 0;
   for (let i = 0; i < value.length; ++i) {
